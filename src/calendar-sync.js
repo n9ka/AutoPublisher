@@ -1,83 +1,11 @@
 require('dotenv').config();
-const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const { supabase } = require('./lib/supabase');
 const { decrypt } = require('./lib/encryption');
+const { getSitePostsForCalendar } = require('./lib/wordpress');
 
 function createDataClient() {
   return createClient(process.env.CACHE_DB_URL, process.env.CACHE_DB_SERVICE_KEY);
-}
-
-function getHeaders(baseUrl, auth, bridgeKey = null) {
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Encoding': 'gzip, deflate, br, zstd',
-    'Cache-Control': 'no-cache',
-  };
-  if (bridgeKey) {
-    headers['X-Bridge-Auth'] = bridgeKey;
-    headers['Authorization'] = `Bearer ${bridgeKey}`;
-  } else if (auth) {
-    headers['Authorization'] = `Basic ${auth}`;
-  }
-  return headers;
-}
-
-async function fetchSitePosts(site, afterDate) {
-  const baseUrl = (site.url || '').replace(/\/$/, '');
-  if (!baseUrl) return [];
-
-  const isBridge = site.connection_mode === 'bridge_plugin' && site.bridge_key;
-  const auth = !isBridge
-    ? Buffer.from(`${site.wp_user}:${site.wp_password}`).toString('base64')
-    : null;
-
-  const params = {
-    per_page: 100,
-    status: 'publish,future',
-    _fields: 'id,title,slug,link,status,date',
-    after: afterDate,
-    orderby: 'date',
-    order: 'asc',
-  };
-
-  try {
-    const response = await axios.get(`${baseUrl}/wp-json/wp/v2/posts`, {
-      params,
-      timeout: 20000,
-      headers: getHeaders(baseUrl, auth, isBridge ? site.bridge_key : null),
-    });
-
-    const posts = response.data || [];
-
-    // Pagination si plus de 100 posts
-    const totalPages = parseInt(response.headers['x-wp-totalpages'] || '1', 10);
-    if (totalPages > 1) {
-      const extraPages = await Promise.all(
-        Array.from({ length: totalPages - 1 }, (_, i) =>
-          axios.get(`${baseUrl}/wp-json/wp/v2/posts`, {
-            params: { ...params, page: i + 2 },
-            timeout: 20000,
-            headers: getHeaders(baseUrl, auth, isBridge ? site.bridge_key : null),
-          }).then(r => r.data || []).catch(() => [])
-        )
-      );
-      posts.push(...extraPages.flat());
-    }
-
-    return posts.map(p => ({
-      wpPostId: p.id,
-      title: p.title?.rendered || '',
-      slug: p.slug || '',
-      link: p.link || '',
-      status: p.status,
-      postDate: p.date,
-    }));
-  } catch (err) {
-    console.warn(`  ⚠️ [${site.name}] Fetch échoué : ${err.message}`);
-    return [];
-  }
 }
 
 async function syncSite(site, dataClient, afterDate) {
@@ -94,9 +22,16 @@ async function syncSite(site, dataClient, afterDate) {
     }
   }
 
-  const posts = await fetchSitePosts({ ...site, wp_password: wpPassword }, afterDate);
+  let posts;
+  try {
+    posts = await getSitePostsForCalendar({ ...site, wp_password: wpPassword }, afterDate);
+  } catch (err) {
+    console.warn(`  ⚠️ [${site.name}] Fetch échoué : ${err.message}`);
+    console.log(`  ℹ️ [${site.name}] Aucun post trouvé (ou site inaccessible).`);
+    return;
+  }
 
-  if (posts.length === 0) {
+  if (!posts.length) {
     console.log(`  ℹ️ [${site.name}] Aucun post trouvé (ou site inaccessible).`);
     return;
   }
@@ -140,7 +75,6 @@ async function syncSite(site, dataClient, afterDate) {
   afterDate.setMonth(afterDate.getMonth() - 2);
   const afterDateISO = afterDate.toISOString();
 
-  // Récupère tous les sites actifs (tous users)
   const { data: sites, error } = await supabase
     .from('wordpress_sites')
     .select('id, user_id, name, url, wp_user, wp_password, wp_password_iv, connection_mode, bridge_key')
@@ -159,7 +93,6 @@ async function syncSite(site, dataClient, afterDate) {
 
   for (const site of sites) {
     await syncSite(site, dataClient, afterDateISO);
-    // Pause pour ne pas marteler les sites WP
     await new Promise(r => setTimeout(r, 2000));
   }
 

@@ -241,4 +241,60 @@ async function getSiteInventory(siteConfig) {
   }
 }
 
-module.exports = { uploadImageToWordPress, publishPost, getCategories, getSiteInventory };
+async function getSitePostsForCalendar(siteConfig, afterDate) {
+  const rawUrl = siteConfig.url || siteConfig.wp_url;
+  const { wp_user, wp_password, connection_mode, bridge_key } = siteConfig;
+  if (!rawUrl) return [];
+
+  const baseUrl = rawUrl.replace(/\/$/, '');
+  const isBridge = connection_mode === 'bridge_plugin' && bridge_key;
+  const auth = !isBridge ? Buffer.from(`${wp_user}:${wp_password}`).toString('base64') : null;
+
+  const params = {
+    per_page: 100,
+    status: 'publish,future',
+    _fields: 'id,title,slug,link,status,date',
+    after: afterDate,
+    orderby: 'date',
+    order: 'asc',
+  };
+
+  try {
+    const response = await axios.get(`${baseUrl}/wp-json/wp/v2/posts`, {
+      params,
+      timeout: 20000,
+      headers: getHeaders(baseUrl, auth, 'application/json', isBridge ? bridge_key : null),
+    });
+
+    if (!Array.isArray(response.data)) return [];
+
+    const posts = [...response.data];
+
+    const totalPages = parseInt(response.headers['x-wp-totalpages'] || '1', 10);
+    if (totalPages > 1) {
+      const extraPages = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, i) =>
+          axios.get(`${baseUrl}/wp-json/wp/v2/posts`, {
+            params: { ...params, page: i + 2 },
+            timeout: 20000,
+            headers: getHeaders(baseUrl, auth, 'application/json', isBridge ? bridge_key : null),
+          }).then(r => Array.isArray(r.data) ? r.data : []).catch(() => [])
+        )
+      );
+      posts.push(...extraPages.flat());
+    }
+
+    return posts.map(p => ({
+      wpPostId: p.id,
+      title: p.title?.rendered || '',
+      slug: p.slug || '',
+      link: p.link || '',
+      status: p.status,
+      postDate: p.date,
+    }));
+  } catch (error) {
+    throw error;
+  }
+}
+
+module.exports = { uploadImageToWordPress, publishPost, getCategories, getSiteInventory, getSitePostsForCalendar };
