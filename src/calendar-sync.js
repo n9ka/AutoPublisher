@@ -1,9 +1,8 @@
 require('dotenv').config();
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
+const { supabase } = require('./lib/supabase');
 const { decrypt } = require('./lib/encryption');
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 function createDataClient() {
   return createClient(process.env.CACHE_DB_URL, process.env.CACHE_DB_SERVICE_KEY);
