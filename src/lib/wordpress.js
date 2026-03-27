@@ -250,37 +250,39 @@ async function getSitePostsForCalendar(siteConfig, afterDate) {
   const isBridge = connection_mode === 'bridge_plugin' && bridge_key;
   const auth = !isBridge ? Buffer.from(`${wp_user}:${wp_password}`).toString('base64') : null;
 
-  const params = {
-    per_page: 100,
-    status: 'publish,future',
-    orderby: 'date',
-    order: 'asc',
-  };
+  const wpHeaders = getHeaders(baseUrl, auth, 'application/json', isBridge ? bridge_key : null);
 
-  try {
+  async function fetchByStatus(status) {
+    const params = { per_page: 100, status, orderby: 'date', order: 'asc' };
     const response = await axios.get(`${baseUrl}/wp-json/wp/v2/posts`, {
       params,
       timeout: 20000,
-      headers: getHeaders(baseUrl, auth, 'application/json', isBridge ? bridge_key : null),
+      headers: wpHeaders,
     });
-
     if (!Array.isArray(response.data)) return [];
-
-    const posts = [...response.data];
-
+    const items = [...response.data];
     const totalPages = parseInt(response.headers['x-wp-totalpages'] || '1', 10);
     if (totalPages > 1) {
-      const extraPages = await Promise.all(
+      const extra = await Promise.all(
         Array.from({ length: totalPages - 1 }, (_, i) =>
           axios.get(`${baseUrl}/wp-json/wp/v2/posts`, {
             params: { ...params, page: i + 2 },
             timeout: 20000,
-            headers: getHeaders(baseUrl, auth, 'application/json', isBridge ? bridge_key : null),
+            headers: wpHeaders,
           }).then(r => Array.isArray(r.data) ? r.data : []).catch(() => [])
         )
       );
-      posts.push(...extraPages.flat());
+      items.push(...extra.flat());
     }
+    return items;
+  }
+
+  try {
+    const [published, scheduled] = await Promise.all([
+      fetchByStatus('publish'),
+      fetchByStatus('future'),
+    ]);
+    const posts = [...published, ...scheduled];
 
     return posts
       .filter(p => !afterDate || p.date >= afterDate)
