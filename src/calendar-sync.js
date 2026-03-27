@@ -144,7 +144,7 @@ async function syncSite(site, dataClient, afterDate) {
   const { data: sites, error } = await supabase
     .from('wordpress_sites')
     .select('id, user_id, name, url, wp_user, wp_password, wp_password_iv, connection_mode, bridge_key')
-    .eq('status', 'active');
+    .eq('active', true);
 
   if (error) {
     console.error(`❌ Erreur Supabase : ${error.message} (code: ${error.code})`);
