@@ -146,7 +146,11 @@ async function syncSite(site, dataClient, afterDate) {
     .select('id, user_id, name, url, wp_user, wp_password, wp_password_iv, connection_mode, bridge_key')
     .eq('status', 'active');
 
-  if (error || !sites?.length) {
+  if (error) {
+    console.error(`❌ Erreur Supabase : ${error.message} (code: ${error.code})`);
+    process.exit(1);
+  }
+  if (!sites?.length) {
     console.log('💤 Aucun site actif trouvé.');
     process.exit(0);
   }
