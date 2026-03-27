@@ -186,6 +186,7 @@ async function runManualJob() {
         slug: aiMetadata.slug,
         link: pubResult.link,
         status: job.custom_status || site.default_status || 'draft',
+        postDate: job.scheduled_at || new Date().toISOString(),
       });
     }
 

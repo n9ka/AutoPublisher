@@ -15,7 +15,7 @@ function createDataClient() {
  * Upsert un article publié dans wp_posts_cache
  * Appelé après chaque publication AutoPublisher pour que les badges doublons restent à jour
  */
-async function upsertToWpCache({ userId, wordpressSiteId, wpPostId, title, slug, link, status }) {
+async function upsertToWpCache({ userId, wordpressSiteId, wpPostId, title, slug, link, status, postDate }) {
   const client = createDataClient();
   if (!client) {
     console.warn('  [wp-cache] CACHE_DB_URL ou CACHE_DB_SERVICE_KEY manquant — sync ignorée.');
@@ -41,6 +41,7 @@ async function upsertToWpCache({ userId, wordpressSiteId, wpPostId, title, slug,
       slug,
       link,
       status: status || 'draft',
+      post_date: postDate || now,
       synced_at: now,
     });
 

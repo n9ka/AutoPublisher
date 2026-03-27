@@ -8,6 +8,7 @@ const { generateRunwareImage } = require('./lib/runware');
 const { uploadImageToWordPress, publishPost, getCategories } = require('./lib/wordpress');
 const { decrypt } = require('./lib/encryption');
 const { spendCredit, refundCredit } = require('./lib/credits');
+const { upsertToWpCache } = require('./lib/supabase-data');
 const { MAIN_PROMPT } = require('./prompts/templates');
 const { TREND_SPY_PROMPT } = require('./prompts/trend-spy');
 const { repairJson } = require('./lib/json-helper');
@@ -201,15 +202,28 @@ async function processNextArticle() {
 
       await supabase
         .from('articles_queue')
-        .update({ 
-          status: 'published', 
+        .update({
+          status: 'published',
           processed_at: new Date(),
           published_title: wpData.title,
           published_url: pubResult.link
         })
         .eq('id', articleId);
+
+      if (pubResult.id) {
+        await upsertToWpCache({
+          userId,
+          wordpressSiteId: site.id,
+          wpPostId: pubResult.id,
+          title: wpData.title,
+          slug: wpData.slug,
+          link: pubResult.link,
+          status: site.default_status || 'publish',
+          postDate: new Date().toISOString(),
+        });
+      }
     }
-      
+
     return true;
 
   } catch (error) {
