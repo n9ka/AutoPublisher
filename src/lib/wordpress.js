@@ -253,8 +253,6 @@ async function getSitePostsForCalendar(siteConfig, afterDate) {
   const params = {
     per_page: 100,
     status: 'publish,future',
-    _fields: 'id,title,slug,link,status,date',
-    after: afterDate,
     orderby: 'date',
     order: 'asc',
   };
@@ -284,14 +282,16 @@ async function getSitePostsForCalendar(siteConfig, afterDate) {
       posts.push(...extraPages.flat());
     }
 
-    return posts.map(p => ({
-      wpPostId: p.id,
-      title: p.title?.rendered || '',
-      slug: p.slug || '',
-      link: p.link || '',
-      status: p.status,
-      postDate: p.date,
-    }));
+    return posts
+      .filter(p => !afterDate || p.date >= afterDate)
+      .map(p => ({
+        wpPostId: p.id,
+        title: p.title?.rendered || '',
+        slug: p.slug || '',
+        link: p.link || '',
+        status: p.status,
+        postDate: p.date,
+      }));
   } catch (error) {
     throw error;
   }
