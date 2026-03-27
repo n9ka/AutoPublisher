@@ -1,0 +1,13 @@
+# Dépendances
+node_modules/
+
+# Environnement & Secrets (NE JAMAIS PUBLIER)
+.env*
+*.env
+
+# Système
+.DS_Store
+Thumbs.db
+logs/
+tmp/
+archive/

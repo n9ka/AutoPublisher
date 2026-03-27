@@ -1,0 +1,32 @@
+name: Trend Spy Detector
+on:
+  schedule:
+    - cron: '5 */8 * * *' # 5 min après le détecteur RSS
+  workflow_dispatch:
+
+jobs:
+  spy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run Trend Spy
+        run: node src/trend-detector.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+          GOOGLE_AI_API_KEY_2: ${{ secrets.GOOGLE_AI_API_KEY_2 }}
+          LANGSEARCH_API_KEY: ${{ secrets.LANGSEARCH_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          MAX_ARTICLES_PER_DAY: ${{ vars.MAX_ARTICLES_PER_DAY || '1' }}

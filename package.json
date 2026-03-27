@@ -1,0 +1,26 @@
+{
+  "name": "autorrewrite",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@runware/sdk-js": "^1.2.3",
+    "@supabase/supabase-js": "^2.93.3",
+    "axios": "^1.13.4",
+    "cheerio": "^1.2.0",
+    "dotenv": "^17.2.3",
+    "google-trends-api": "^4.9.2",
+    "openai": "^6.17.0",
+    "pg": "^8.18.0",
+    "rss-parser": "^3.13.0",
+    "xml2js": "^0.6.2"
+  }
+}
