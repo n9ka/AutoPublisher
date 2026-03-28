@@ -48,6 +48,12 @@ Le champ "content" du JSON doit contenir UNIQUEMENT du HTML valide pour WordPres
    - Paragraphes : <p>...</p>
    - Listes : <ul class="wp-block-list"><li>...</li></ul>
 
+# CONSIGNES DE SÉCURITÉ JSON (CRITIQUE)
+- Réponds EXCLUSIVEMENT par l'objet JSON, sans aucun texte avant ou après.
+- Assure-toi que le JSON est valide. Ne pas insérer de retours à la ligne physiques dans les valeurs (utilise \\n).
+- Échappe correctement les guillemets et caractères spéciaux.
+- **TRONCATURE** : Si tu manques de place, termine impérativement par la fermeture du JSON (} ) même si l'article est écourté.
+
 # FORMAT DE SORTIE (JSON STRICT)
 Réponds UNIQUEMENT avec ce JSON valide :
 {

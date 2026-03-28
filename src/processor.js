@@ -272,7 +272,7 @@ function parseAiJson(text) {
     console.warn("⚠️ JSON standard échoué, tentative de réparation des caractères d'échappement...");
     try {
       // 2. Tentative de secours via le helper
-      const fixedJson = repairJson(rawJson);
+      const { json: fixedJson } = repairJson(rawJson);
       return JSON.parse(fixedJson);
     } catch (e2) {
       console.error("Échec sauvetage JSON. Fin du texte :", jsonStr.slice(-300));

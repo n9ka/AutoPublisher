@@ -125,14 +125,41 @@ async function runManualJob() {
       // MODE EXPRESS
       await spendCredit(site.user_id, 3, jobId);
       creditsSpent = 3;
+      const persona = site.persona || {};
       const searchResults = await searchBrave(job.source_title);
-      const raw = await generateDeepSeek(SEO_GENERATOR_PROMPT
+
+      const expressPrompt = SEO_GENERATOR_PROMPT
         .replace('{{target_keyword}}', job.source_title)
         .replace('{{search_results}}', searchResults)
-        .replace(/\{\{current_date\}\}/g, currentDate));
-      const aiOutput = parseAiJson(raw);
+        .replace(/\{\{current_date\}\}/g, currentDate)
+        .replace('{{persona_nom}}', persona.name || 'Expert')
+        .replace('{{persona_background}}', persona.background || '')
+        .replace('{{persona_specialite}}', persona.specialty || '')
+        .replace('{{persona_ton}}', persona.tone || 'Professionnel')
+        .replace('{{persona_tics_langage}}', persona.tics || '')
+        .replace('{{persona_utilise_je}}', persona.use_first_person ? 'Oui (Utilise "Je")' : 'Non (Reste impersonnel)')
+        .replace('{{persona_particularites}}', persona.particularities || '')
+        .replace('{{humanization_level}}', persona.humanization_level || 'medium');
+
+      console.log('  🧠 [EXPRESS] Génération DeepSeek V3...');
+      let aiOutput = null;
+      for (let i = 1; i <= 2; i++) {
+        const model = i === 1 ? 'deepseek-chat' : 'deepseek-reasoner';
+        if (i === 2) console.warn('  ⚠️ [EXPRESS] Troncature détectée — relance sur deepseek-reasoner...');
+        const raw = await generateDeepSeek(expressPrompt, model);
+        const parsed = parseAiJson(raw);
+        if (parsed._isTruncated && i === 1) continue;
+        aiOutput = parsed;
+        break;
+      }
+      console.log('  ✅ [EXPRESS] Génération terminée.');
+
       aiMetadata = aiOutput.wordpress || aiOutput.metadata;
-      finalHtml = aiOutput.content || aiOutput.html;
+      finalHtml = aiMetadata.content || aiMetadata.html || aiOutput.content || aiOutput.html;
+    }
+
+    if (!finalHtml || finalHtml.trim().length < 100) {
+      throw new Error('Contenu généré vide ou trop court — publication annulée.');
     }
 
     const categories = await getCategories(site);
