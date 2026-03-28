@@ -278,15 +278,14 @@ async function getSitePostsForCalendar(siteConfig, afterDate) {
   }
 
   try {
-    const [published, scheduled] = await Promise.all([
+    const [published, scheduled, drafts] = await Promise.all([
       fetchByStatus('publish'),
       fetchByStatus('future'),
+      fetchByStatus('draft'),
     ]);
-    const posts = [...published, ...scheduled];
+    const posts = [...published, ...scheduled, ...drafts];
 
-    return posts
-      .filter(p => !afterDate || p.date >= afterDate)
-      .map(p => ({
+    return posts.map(p => ({
         wpPostId: p.id,
         title: p.title?.rendered || '',
         slug: p.slug || '',
