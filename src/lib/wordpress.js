@@ -134,11 +134,21 @@ async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
     });
 
     const data = response.data;
-    const publishedLink = (data && typeof data === 'object' && data.link && typeof data.link === 'string')
-      ? data.link
-      : `${baseUrl}/?p=${data && data.id ? data.id : 'unknown'}`;
 
-    return { success: true, id: data?.id || null, link: publishedLink };
+    // Valider que la réponse est un objet WP valide avec un post ID.
+    // Un 200 avec body HTML (WAF/challenge) ou un objet sans id passerait sinon silencieusement.
+    if (!data || typeof data !== 'object' || !data.id || typeof data.id !== 'number' || data.id <= 0) {
+      const preview = typeof data === 'string' ? data.slice(0, 200) : JSON.stringify(data);
+      const err = new Error(`Réponse WP invalide — post ID absent ou nul. Body: ${preview}`);
+      err._httpStatus = response.status;
+      throw err;
+    }
+
+    const publishedLink = (data.link && typeof data.link === 'string')
+      ? data.link
+      : `${baseUrl}/?p=${data.id}`;
+
+    return { success: true, id: data.id, link: publishedLink };
 
   } catch (error) {
     const errorData = error.response ? error.response.data : error.message;
