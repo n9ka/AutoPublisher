@@ -11,3 +11,6 @@ Thumbs.db
 logs/
 tmp/
 archive/
+
+# Scripts locaux (usage personnel, ne pas publier)
+src/workflow-publisher.js
