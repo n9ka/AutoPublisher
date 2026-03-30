@@ -17,9 +17,9 @@ async function generatePostText(article, site) {
     persona.topic  ? `Thématique : ${persona.topic}.` : '',
   ].filter(Boolean).join(' ') || 'Ton professionnel et engageant.';
 
-  const title   = article.published_title || article.source_title || article.content?.title || 'Sans titre';
-  const url     = article.published_url || article.content?.wp_url || '';
-  const excerpt = article.content?.excerpt || article.content?.intro || '';
+  const title   = article.published_title || article.source_title || 'Sans titre';
+  const url     = article.published_url || '';
+  const excerpt = '';
 
   const prompt = `Tu es le community manager du site "${site.name}".
 ${personaDesc}
@@ -136,13 +136,15 @@ async function processQueue() {
 
     try {
       // Récupère l'article pour le contexte
-      const { data: article, error: articleError } = await supabase
+      const { data: article } = await supabase
         .from('articles_queue')
-        .select('source_title, published_url, published_title, content')
+        .select('source_title, published_url, published_title')
         .eq('id', job.article_id)
         .single();
 
-      console.log(`  📄 article_id: ${job.article_id} | published_url: ${article?.published_url ?? 'NULL'} | error: ${articleError?.message ?? 'none'}`);
+      if (!article?.published_url) {
+        console.warn(`  ⚠️  published_url manquant pour l'article ${job.article_id} — tweet sans lien`);
+      }
 
       const text = await generatePostText(article ?? {}, site);
       console.log(`  ✍️  Texte généré (${text.length} chars)`);
