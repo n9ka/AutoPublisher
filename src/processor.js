@@ -13,6 +13,33 @@ const { MAIN_PROMPT } = require('./prompts/templates');
 const { TREND_SPY_PROMPT } = require('./prompts/trend-spy');
 const { repairJson } = require('./lib/json-helper');
 
+/**
+ * Insère un job dans social_queue si le trigger social est activé pour ce site/source_type
+ */
+async function enqueueSocialPost(siteId, articleId, sourceType, scheduledAt = null) {
+  const triggerCol = `trigger_${sourceType}`;
+
+  const { data: config } = await supabase
+    .from('site_social_config')
+    .select('id, posting_enabled')
+    .eq('site_id', siteId)
+    .eq(triggerCol, true)
+    .eq('posting_enabled', true)
+    .maybeSingle();
+
+  if (!config) return;
+
+  await supabase.from('social_queue').insert({
+    site_id: siteId,
+    article_id: articleId,
+    source_type: sourceType,
+    status: 'pending',
+    scheduled_at: scheduledAt || new Date().toISOString(),
+  });
+
+  console.log(`  📱 Post social mis en queue (${sourceType})${scheduledAt ? ` — planifié à ${scheduledAt}` : ''}`);
+}
+
 async function processNextArticle() {
   console.log('⚙️  Recherche d\'un article en attente...');
 
@@ -209,6 +236,8 @@ async function processNextArticle() {
           published_url: pubResult.link
         })
         .eq('id', articleId);
+
+      await enqueueSocialPost(site.id, articleId, queueItem.source_type, queueItem.scheduled_at);
 
       if (pubResult.id) {
         await upsertToWpCache({

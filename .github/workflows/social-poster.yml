@@ -1,0 +1,30 @@
+name: Social Poster
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # toutes les 4 heures
+  workflow_dispatch:         # déclenchement manuel possible
+
+jobs:
+  post-social:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run social poster
+        run: node src/social-poster.js
+        env:
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}
+          DEEPSEEK_API_KEY:  ${{ secrets.DEEPSEEK_API_KEY }}
+          ENCRYPTION_KEY:    ${{ secrets.ENCRYPTION_KEY }}
