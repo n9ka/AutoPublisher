@@ -42,10 +42,18 @@ Réponds UNIQUEMENT avec ce JSON :
 {"text": "..."}`;
 
   const raw = await generateContent(prompt, 'deepseek-chat');
-  const { json } = repairJson(raw);
-  const parsed = JSON.parse(json);
 
-  let text = parsed.text || '';
+  let text = '';
+  try {
+    const { json } = repairJson(raw);
+    text = JSON.parse(json).text || '';
+  } catch {
+    // Fallback regex si repairJson produit du JSON invalide (emojis, caractères spéciaux)
+    const match = raw.match(/"text"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+    text = match?.[1]?.replace(/\\n/g, '\n') || '';
+  }
+
+  if (!text) throw new Error('Génération du texte échouée — réponse DeepSeek vide ou invalide');
 
   // Sécurité : tronque si dépassement
   if (text.length > 240) {
