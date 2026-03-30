@@ -42,7 +42,8 @@ Réponds UNIQUEMENT avec ce JSON :
 {"text": "..."}`;
 
   const raw = await generateContent(prompt, 'deepseek-chat');
-  const parsed = repairJson(raw);
+  const { json } = repairJson(raw);
+  const parsed = JSON.parse(json);
 
   let text = parsed.text || '';
 
