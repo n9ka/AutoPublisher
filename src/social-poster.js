@@ -136,11 +136,13 @@ async function processQueue() {
 
     try {
       // Récupère l'article pour le contexte
-      const { data: article } = await supabase
+      const { data: article, error: articleError } = await supabase
         .from('articles_queue')
         .select('source_title, published_url, published_title, content')
         .eq('id', job.article_id)
         .single();
+
+      console.log(`  📄 article_id: ${job.article_id} | published_url: ${article?.published_url ?? 'NULL'} | error: ${articleError?.message ?? 'none'}`);
 
       const text = await generatePostText(article ?? {}, site);
       console.log(`  ✍️  Texte généré (${text.length} chars)`);
