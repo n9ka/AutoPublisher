@@ -13,6 +13,7 @@ const { spendCredit, refundCredit } = require('./lib/credits');
 const { upsertToWpCache } = require('./lib/supabase-data');
 const { SEO_GENERATOR_PROMPT } = require('./prompts/seo-generator');
 const { repairJson } = require('./lib/json-helper');
+const { enqueueSocialPost } = require('./lib/social/enqueue');
 
 const { EXPERT_ANALYST_PROMPT } = require('./prompts/expert-analyst');
 const { EXPERT_WRITER_PROMPT } = require('./prompts/expert-writer');
@@ -202,6 +203,8 @@ async function runManualJob() {
     });
 
     await supabase.from('articles_queue').update({ status: 'published', processed_at: new Date(), published_title: aiMetadata.title, published_url: pubResult.link }).eq('id', jobId);
+
+    await enqueueSocialPost(site.id, jobId, 'seo', job.scheduled_at);
 
     // Mise à jour du cache wp_posts_cache (aspy-data) pour les badges doublons UI
     if (pubResult.id) {
