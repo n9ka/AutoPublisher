@@ -98,11 +98,8 @@ async function getChannels(apiKey) {
  * @returns {Array<{channelId, postId, status}>}
  */
 async function post(siteConfig, accountConfig, text) {
-  const token = decrypt(
-    accountConfig.api_key,
-    accountConfig.api_key_iv,
-    accountConfig.api_key_auth_tag
-  );
+  const [encryptedContent, authTag] = accountConfig.api_key.split(':');
+  const token = decrypt(encryptedContent, accountConfig.api_key_iv, authTag);
 
   const channelIds = siteConfig.channel_ids ?? [];
   if (channelIds.length === 0) throw new Error('Aucun channel configuré pour ce site');

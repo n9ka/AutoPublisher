@@ -17,8 +17,8 @@ async function generatePostText(article, site) {
     persona.topic  ? `Thématique : ${persona.topic}.` : '',
   ].filter(Boolean).join(' ') || 'Ton professionnel et engageant.';
 
-  const title   = article.source_title || article.content?.title || 'Sans titre';
-  const url     = article.content?.wp_url || '';
+  const title   = article.published_title || article.source_title || article.content?.title || 'Sans titre';
+  const url     = article.published_url || article.content?.wp_url || '';
   const excerpt = article.content?.excerpt || article.content?.intro || '';
 
   const prompt = `Tu es le community manager du site "${site.name}".
@@ -129,8 +129,8 @@ async function processQueue() {
       // Récupère l'article pour le contexte
       const { data: article } = await supabase
         .from('articles_queue')
-        .select('source_title, content')
-        .eq('id', job.id_article || job.article_id)
+        .select('source_title, published_url, published_title, content')
+        .eq('id', job.article_id)
         .single();
 
       const text = await generatePostText(article ?? {}, site);
