@@ -17,6 +17,32 @@ async function checkAutoSeo(site) {
   const isEnabled = site.auto_seo_enabled || false;
   if (!isEnabled || quota <= 0) return false;
 
+  // 1b. Vérifier la plage de dates si définie
+  if (site.auto_seo_start_date && site.auto_seo_end_date) {
+    const now = new Date();
+    const start = new Date(site.auto_seo_start_date);
+    const end = new Date(site.auto_seo_end_date);
+    end.setHours(23, 59, 59, 999); // inclusif sur le jour de fin
+
+    if (now < start) {
+      console.log(`  ⏳ AutoPilot : Plage pas encore commencée (début: ${site.auto_seo_start_date}).`);
+      return false;
+    }
+
+    if (now > end) {
+      console.log(`  🔚 AutoPilot : Plage expirée (fin: ${site.auto_seo_end_date}). Réinitialisation...`);
+      await supabase
+        .from('wordpress_sites')
+        .update({
+          auto_seo_enabled: false,
+          auto_seo_start_date: null,
+          auto_seo_end_date: null,
+        })
+        .eq('id', site.id);
+      return false;
+    }
+  }
+
   // 2. Calculer l'intervalle (ex: 3 art/semaine = 56h)
   const intervalHours = (7 * 24) / quota;
 
