@@ -22,6 +22,7 @@ Voici les informations récentes récupérées pour ce sujet :
 {{search_results}}
 
 # RÈGLES D'OR DU STYLE
+0. **Longueur cible** : L'article doit faire environ {{target_length}} mots.
 1. **Entrée directe** : Pas de présentation. Attaque immédiatement le sujet.
 2. **Zéro Résumé** : Développe chaque point avec expertise.
 3. **Anonymisation** : Tu es l'unique auteur. Ne cite pas les sources.

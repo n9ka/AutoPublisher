@@ -98,7 +98,6 @@ async function checkAutoSeo(site) {
       generation_mode: mode,
       target_length: backlogItem.target_length || site.auto_seo_target_length || 'medium',
       infographic_model: backlogItem.infographic_model || site.auto_seo_infographic_style || 'banana',
-      image_provider: backlogItem.image_provider || site.image_provider || 'pexels',
       custom_status: site.auto_seo_status || 'draft',
       status: 'pending',
       created_at: new Date()

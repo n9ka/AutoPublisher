@@ -116,9 +116,11 @@ async function runManualJob() {
       }
 
       if (aiMetadata.infographic_prompt) {
-        console.log('📊 [EXPERT] Phase 4: Infographie...');
+        const infographicModel = job.infographic_model || site.auto_seo_infographic_style || 'banana';
+        const runwareModel = infographicModel === 'flux' ? 'runware:400@1' : 'google:4@3';
+        console.log(`📊 [EXPERT] Phase 4: Infographie (${infographicModel})...`);
         try {
-          infographicUrl = await generateRunwareImage(aiMetadata.infographic_prompt, "infographic", 3, "runware:400@1");
+          infographicUrl = await generateRunwareImage(aiMetadata.infographic_prompt, "infographic", 3, runwareModel);
         } catch (e) {}
       }
 
@@ -129,10 +131,12 @@ async function runManualJob() {
       const persona = site.persona || {};
       const searchResults = await searchBrave(job.source_title);
 
+      const expressLength = job.target_length === 'long' ? '1800' : job.target_length === 'short' ? '800' : '1200';
       const expressPrompt = SEO_GENERATOR_PROMPT
         .replace('{{target_keyword}}', job.source_title)
         .replace('{{search_results}}', searchResults)
         .replace(/\{\{current_date\}\}/g, currentDate)
+        .replace('{{target_length}}', expressLength)
         .replace('{{persona_nom}}', persona.name || 'Expert')
         .replace('{{persona_background}}', persona.background || '')
         .replace('{{persona_specialite}}', persona.specialty || '')
