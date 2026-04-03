@@ -78,9 +78,16 @@ async function runManualJob() {
         .replace('{{perplexity_results}}', expertResearch)
         .replace(/\{\{current_date\}\}/g, currentDate), 'deepseek-reasoner');
 
+      const expertPersona = site.persona || {};
       const writerPrompt = EXPERT_WRITER_PROMPT
         .replace('{{strategic_brief}}', strategicBrief)
-        .replace('{{persona_nom}}', site.persona?.name || 'Expert')
+        .replace('{{persona_nom}}', expertPersona.name || 'Expert')
+        .replace('{{persona_background}}', expertPersona.background || '')
+        .replace('{{persona_specialite}}', expertPersona.specialty || '')
+        .replace('{{persona_ton}}', expertPersona.tone || 'Professionnel')
+        .replace('{{persona_tics_langage}}', expertPersona.tics || '')
+        .replace('{{persona_utilise_je}}', expertPersona.use_first_person ? 'Oui (Utilise "Je")' : 'Non (Reste impersonnel)')
+        .replace('{{humanization_level}}', expertPersona.humanization_level || 'medium')
         .replace(/\{\{current_date\}\}/g, currentDate)
         .replace('{{target_length}}', job.target_length === 'long' ? '2200' : '1500');
 
