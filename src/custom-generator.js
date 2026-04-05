@@ -61,13 +61,15 @@ function parseAiJson(text) {
 /**
  * Injecte les images de section dans le HTML Gutenberg
  * Remplace les marqueurs <!-- SECTION_IMAGE_N --> par des blocs wp:image
+ * @param {string[]} altTexts — descriptions des images (pour l'attribut alt)
  */
-function injectSectionImages(html, sectionImageUrls) {
+function injectSectionImages(html, sectionImageUrls, altTexts = []) {
   let result = html;
   sectionImageUrls.forEach((url, idx) => {
     if (!url) return;
     const marker = `<!-- SECTION_IMAGE_${idx + 1} -->`;
-    const block = `\n<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${url}" alt=""/></figure><!-- /wp:image -->\n`;
+    const alt = (altTexts[idx] || '').replace(/"/g, '&quot;').substring(0, 120);
+    const block = `\n<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${url}" alt="${alt}"/></figure><!-- /wp:image -->\n`;
     result = result.replace(marker, block);
   });
   // Nettoyer les marqueurs sans image
@@ -181,15 +183,15 @@ async function runCustomJob() {
     const persona = site.persona || {};
 
     const readingTimeRule = opts.reading_time
-      ? `### PREMIER ÉLÉMENT ABSOLU (RIEN AVANT, PAS MÊME UNE PHRASE D'INTRO)\n<!-- wp:paragraph --><p class="reading-time" style="font-style:italic;margin-bottom:20px;"><i class="fa-solid fa-clock"></i> Temps de lecture : X min</p><!-- /wp:paragraph -->\n(Calcule X = nb_mots_estimés / 200. Puis écris le corps de l'article.)`
-      : '';
+      ? `### 1. TEMPS DE LECTURE — PREMIER ÉLÉMENT ABSOLU (RIEN AVANT, même pas une phrase d'intro)\n<!-- wp:paragraph --><p class="reading-time" style="font-style:italic;margin-bottom:20px;"><i class="fa-solid fa-clock"></i> Temps de lecture : X min</p><!-- /wp:paragraph -->\n(Calcule X = nb_mots_article / 200, arrondi au supérieur.)\n\n### 2. POINTS CLÉS À RETENIR — OBLIGATOIRE juste après le temps de lecture\n<!-- wp:group {"className":"key-takeaways"} --><div class="wp-block-group"><h3><i class="fa-solid fa-lightbulb"></i> Points clés à retenir</h3><ul class="wp-block-list"><li>...</li></ul></div><!-- /wp:group -->\n(3-4 points. Commence chaque point par un <strong>mot-clé en gras</strong>. Répond directement à l'intention de recherche.)`
+      : `### 1. POINTS CLÉS À RETENIR — PREMIER ÉLÉMENT ABSOLU (RIEN AVANT)\n<!-- wp:group {"className":"key-takeaways"} --><div class="wp-block-group"><h3><i class="fa-solid fa-lightbulb"></i> Points clés à retenir</h3><ul class="wp-block-list"><li>...</li></ul></div><!-- /wp:group -->\n(3-4 points. Commence chaque point par un <strong>mot-clé en gras</strong>.)`;
 
     const tocRule = opts.table_of_contents
-      ? `### Sommaire — utilise UNIQUEMENT ce shortcode (ne pas coder le sommaire en dur) :\n<!-- wp:shortcode -->[ez-toc]<!-- /wp:shortcode -->`
+      ? `### 3. SOMMAIRE — utilise UNIQUEMENT ce shortcode Gutenberg (ne jamais coder le sommaire en HTML) :\n<!-- wp:shortcode -->[ez-toc]<!-- /wp:shortcode -->`
       : '';
 
     const faqRule = opts.faq
-      ? `### Section FAQ (fin d'article, avant conclusion)\nUtilise les questions du brief. Format :\n<!-- wp:heading {"level":2} --><h2 class="wp-block-heading"><i class="fa-solid fa-circle-question"></i> Questions fréquentes</h2><!-- /wp:heading -->\nPour chaque Q/R : <!-- wp:paragraph --><p><strong><i class="fa-solid fa-circle-question"></i> Question ?</strong></p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Réponse concise.</p><!-- /wp:paragraph -->`
+      ? `### SECTION FAQ (fin d'article, avant la conclusion)\nFormat exact à respecter :\n<!-- wp:heading {"level":2} --><h2 class="wp-block-heading"><i class="fa-solid fa-circle-question"></i> Questions fréquentes</h2><!-- /wp:heading -->\nPour chaque Q/R :\n<!-- wp:paragraph --><p><strong><i class="fa-solid fa-circle-question"></i> La question ?</strong></p><!-- /wp:paragraph -->\n<!-- wp:paragraph --><p>La réponse concise en 2-3 phrases.</p><!-- /wp:paragraph -->`
       : '';
 
     const writingInstructionsBlock = opts.writing_instructions
@@ -259,15 +261,22 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
 
     const featuredPrompt = (aiOutput.metadata.image_generation_prompt || `${keyword}, professional photo`) + styleSuffix;
 
-    // Prépare les prompts images de section
+    // Prépare les prompts images de section + alt texts
     const sectionImagePrompts = [];
+    const sectionImageAltTexts = [];
     const sectionStyle = stylePhotos[opts.section_image_style] || '';
     if (sectionImgCount > 0 && strategicBrief.section_image_prompts) {
       for (let i = 0; i < sectionImgCount; i++) {
         const p = strategicBrief.section_image_prompts[i];
-        if (p) sectionImagePrompts.push(p + sectionStyle);
+        if (p) {
+          sectionImagePrompts.push(p + sectionStyle);
+          // Alt text = description courte du prompt (premiers 80 chars, sans style suffix)
+          sectionImageAltTexts.push(p.replace(/,.*$/, '').trim().substring(0, 80));
+        }
       }
     }
+    console.log(`  🎨 Style images de section: "${opts.section_image_style || 'photorealistic'}" (suffixe: "${sectionStyle || 'aucun'}")`);
+    console.log(`  🎨 Style image principale: "${featuredImageStyle}" (suffixe: "${styleSuffix || 'aucun'}"`);
 
     // Modèle infographie
     const infographicRunwareModel = opts.infographic_model === 'flux' ? 'runware:400@1' : 'google:4@3';
@@ -307,7 +316,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
           }
         })
       );
-      finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls);
+      finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls, sectionImageAltTexts);
     }
     const infographicAlt = `Infographie : ${keyword}`;
 
