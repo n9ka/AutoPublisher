@@ -1,0 +1,372 @@
+// custom-generator.js — Mode Personnalisé (Custom SEO)
+// Pipeline 4 phases : Recherche → Brief → Rédaction → Médias → Publication
+require('dotenv').config();
+const { supabase } = require('./lib/supabase');
+const { searchBrave } = require('./lib/research');
+const { researchWithTavily } = require('./lib/tavily');
+const { generateWithLLM } = require('./lib/llm-client');
+const { generateRunwareImage } = require('./lib/runware');
+const { uploadImageToWordPress, publishPost, getCategories } = require('./lib/wordpress');
+const { decrypt } = require('./lib/encryption');
+const { spendCredit, refundCredit } = require('./lib/credits');
+const { upsertToWpCache } = require('./lib/supabase-data');
+const { classifyArticle } = require('./lib/gemini');
+const { enqueueSocialPost } = require('./lib/social/enqueue');
+const { CUSTOM_ANALYST_PROMPT } = require('./prompts/custom-analyst');
+const { CUSTOM_WRITER_PROMPT } = require('./prompts/custom-writer');
+const { repairJson } = require('./lib/json-helper');
+
+// Coûts fixes par composant (crédits)
+const FIXED_COSTS = {
+  research: 2,    // Brave + Tavily
+  infographic: 2, // Runware NanoBanana
+  section_img: 1, // Runware par image de section
+};
+
+/**
+ * Calcule le coût total d'un job custom
+ * @param {Object} opts — custom_options JSONB
+ * @param {Object} briefModel — ligne llm_models
+ * @param {Object} writingModel — ligne llm_models
+ * @returns {number}
+ */
+function calculateTotalCredits(opts, briefModel, writingModel) {
+  const sectionImgCount = opts.section_images === -1 ? 6 : (opts.section_images || 0);
+  let total = FIXED_COSTS.research;
+  total += briefModel.credits_per_call;
+  total += writingModel.credits_per_call;
+  if (opts.infographic) total += FIXED_COSTS.infographic;
+  if (sectionImgCount > 0) total += sectionImgCount * FIXED_COSTS.section_img;
+  return total;
+}
+
+function parseAiJson(text) {
+  let jsonStr = text.trim().replace(/```json/g, '').replace(/```/g, '');
+  const firstBrace = jsonStr.indexOf('{');
+  if (firstBrace === -1) throw new Error('Structure JSON non trouvée dans la réponse LLM');
+  const lastBrace = jsonStr.lastIndexOf('}');
+  if (lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      const parsed = JSON.parse(jsonStr.substring(firstBrace, lastBrace + 1));
+      parsed._isTruncated = false;
+      return parsed;
+    } catch (e) {}
+  }
+  const { json: fixed, isTruncated } = repairJson(jsonStr);
+  const parsed = JSON.parse(fixed);
+  parsed._isTruncated = isTruncated;
+  return parsed;
+}
+
+/**
+ * Injecte les images de section dans le HTML Gutenberg
+ * Remplace les marqueurs <!-- SECTION_IMAGE_N --> par des blocs wp:image
+ */
+function injectSectionImages(html, sectionImageUrls) {
+  let result = html;
+  sectionImageUrls.forEach((url, idx) => {
+    if (!url) return;
+    const marker = `<!-- SECTION_IMAGE_${idx + 1} -->`;
+    const block = `\n<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${url}" alt=""/></figure><!-- /wp:image -->\n`;
+    result = result.replace(marker, block);
+  });
+  // Nettoyer les marqueurs sans image
+  result = result.replace(/<!-- SECTION_IMAGE_\d+ -->/g, '');
+  return result;
+}
+
+async function runCustomJob() {
+  const jobId = process.argv[2];
+  if (!jobId) {
+    console.error('❌ Aucun ID de job fourni.');
+    process.exit(1);
+  }
+
+  console.log(`🚀 [CUSTOM] Démarrage du Job: ${jobId}`);
+
+  // Chargement du job
+  const { data: job, error: jobError } = await supabase
+    .from('articles_queue')
+    .select('*, wordpress_sites(*)')
+    .eq('id', jobId)
+    .single();
+
+  if (jobError || !job) {
+    console.error('❌ Job introuvable');
+    process.exit(1);
+  }
+
+  const site = job.wordpress_sites;
+  const opts = job.custom_options;
+
+  if (!opts) {
+    console.error('❌ custom_options manquant dans le job');
+    process.exit(1);
+  }
+
+  // Chargement des modèles LLM depuis la DB
+  const { data: briefModel } = await supabase.from('llm_models').select('*').eq('id', opts.brief_model_id).single();
+  const { data: writingModel } = await supabase.from('llm_models').select('*').eq('id', opts.model_id).single();
+
+  if (!briefModel || !writingModel) {
+    console.error('❌ Modèle LLM introuvable en DB');
+    process.exit(1);
+  }
+
+  console.log(`  🤖 Brief: ${briefModel.label} | Rédaction: ${writingModel.label}`);
+
+  // Décryptage mot de passe WordPress
+  let wpPassword = site.wp_password;
+  if (site.wp_password_iv) {
+    const [encrypted, authTag] = site.wp_password.split(':');
+    wpPassword = decrypt(encrypted, site.wp_password_iv, authTag);
+  }
+
+  await supabase.from('articles_queue').update({ status: 'processing', processing_started_at: new Date() }).eq('id', jobId);
+
+  const totalCredits = calculateTotalCredits(opts, briefModel, writingModel);
+  let creditsSpent = 0;
+  const currentDate = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const keyword = job.source_title;
+
+  try {
+    // Débit des crédits EN DÉBUT (cohérent avec manual-generator.js)
+    await spendCredit(site.user_id, totalCredits, jobId);
+    creditsSpent = totalCredits;
+    console.log(`  💳 ${totalCredits} crédits débités (CUSTOM).`);
+
+    // ── PHASE 0 : Recherche parallèle ──────────────────────────────────────
+    console.log('🔍 [CUSTOM] Phase 0: Recherche parallèle...');
+    const [braveResults, tavilyResults] = await Promise.all([
+      searchBrave(keyword, false),
+      researchWithTavily(keyword),
+    ]);
+
+    // ── PHASE 1 : Brief stratégique ────────────────────────────────────────
+    console.log(`🧠 [CUSTOM] Phase 1: Brief stratégique (${briefModel.label})...`);
+
+    const targetLength = opts.target_length === 'long' ? '3000' : '2000';
+    const sectionImgCount = opts.section_images === -1 ? 6 : (opts.section_images || 0);
+
+    const infographicBriefBlock = opts.infographic
+      ? `## Brief Infographie\nDécris dans "infographic_prompt" une scène conceptuelle forte illustrant le sujet principal. Style illustration 2D flat-vector, textes en FRANÇAIS limités à 1 titre + 3-5 mots-clés.`
+      : '';
+
+    const sectionImagesBlock = sectionImgCount > 0
+      ? `## Prompts Images de Section\nGénère ${sectionImgCount} prompts en anglais dans "section_image_prompts", un par H2 principal. Chaque prompt doit décrire une photographie professionnelle textless liée à la section.`
+      : '';
+
+    const researchInstructionsBlock = opts.research_instructions
+      ? `## Instructions Recherche Personnalisées\n${opts.research_instructions}`
+      : '';
+
+    const analystPrompt = CUSTOM_ANALYST_PROMPT
+      .replace('{{keyword}}', keyword)
+      .replace('{{brave_results}}', braveResults || 'Aucun résultat Brave disponible')
+      .replace('{{tavily_results}}', tavilyResults || 'Aucun résultat Tavily disponible')
+      .replace('{{options_json}}', JSON.stringify(opts, null, 2))
+      .replace('{{target_length}}', targetLength)
+      .replace('{{current_date}}', currentDate)
+      .replace('{{research_instructions_block}}', researchInstructionsBlock)
+      .replace('{{infographic_brief_block}}', infographicBriefBlock)
+      .replace('{{section_images_block}}', sectionImagesBlock);
+
+    const briefRaw = await generateWithLLM(analystPrompt, briefModel);
+    const strategicBrief = parseAiJson(briefRaw);
+    console.log('  ✅ Brief généré. Format détecté:', strategicBrief.format);
+
+    // ── PHASE 2 : Rédaction ────────────────────────────────────────────────
+    console.log(`✍️ [CUSTOM] Phase 2: Rédaction (${writingModel.label})...`);
+
+    const persona = site.persona || {};
+
+    const readingTimeRule = opts.reading_time
+      ? `## Temps de Lecture\nAjoute en début d'article (après le premier paragraphe d'intro) un bloc <!-- wp:paragraph --><p><i class="fa fa-clock-o"></i> <strong>Temps de lecture estimé : X minutes</strong></p><!-- /wp:paragraph --> où X est calculé selon environ 200 mots/minute.`
+      : '';
+
+    const tocRule = opts.table_of_contents
+      ? `## Sommaire (Table des Matières)\nAjoute un bloc sommaire cliquable après le premier paragraphe. Format : <!-- wp:group --><div class="wp-block-group"><h2>Sommaire</h2><ul>...liens vers chaque H2...</ul></div><!-- /wp:group -->`
+      : '';
+
+    const faqRule = opts.faq
+      ? `## Section FAQ\nAjoute une section FAQ complète à la fin de l'article (avant la conclusion). Utilise les questions/réponses du brief. Format H2 "Questions fréquentes" + couples question/réponse en paragraphes.`
+      : '';
+
+    const writingInstructionsBlock = opts.writing_instructions
+      ? `## Instructions Rédaction Personnalisées\n${opts.writing_instructions}`
+      : '';
+
+    const writerPrompt = CUSTOM_WRITER_PROMPT
+      .replace('{{strategic_brief}}', JSON.stringify(strategicBrief, null, 2))
+      .replace('{{persona_nom}}', persona.name || 'Expert')
+      .replace('{{persona_background}}', persona.background || '')
+      .replace('{{persona_specialite}}', persona.specialty || '')
+      .replace('{{persona_ton}}', persona.tone || 'Professionnel')
+      .replace('{{persona_tics_langage}}', persona.tics || '')
+      .replace('{{persona_utilise_je}}', persona.use_first_person ? 'Oui (Utilise "Je")' : 'Non (Reste impersonnel)')
+      .replace('{{humanization_level}}', persona.humanization_level || 'medium')
+      .replace('{{options_json}}', JSON.stringify(opts, null, 2))
+      .replace('{{current_date}}', currentDate)
+      .replace('{{target_length}}', targetLength)
+      .replace('{{reading_time_rule}}', readingTimeRule)
+      .replace('{{toc_rule}}', tocRule)
+      .replace('{{faq_rule}}', faqRule)
+      .replace('{{writing_instructions_block}}', writingInstructionsBlock);
+
+    let aiOutput = await generateWithLLM(writerPrompt, writingModel).then(raw => parseAiJson(raw));
+
+    // Phase 2b : patch sections manquantes (si nécessaire, modèle économique)
+    if (aiOutput._missing_sections && aiOutput._missing_sections.length > 0) {
+      console.warn(`  ⚠️ Sections manquantes: ${aiOutput._missing_sections.join(', ')} — patch...`);
+      const patchPrompt = `L'article suivant manque ces sections : ${aiOutput._missing_sections.join(', ')}.
+Brief stratégique original : ${JSON.stringify(strategicBrief, null, 2)}
+HTML existant : ${aiOutput.html}
+Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le HTML des sections). Date : ${currentDate}.`;
+
+      const patchedHtml = await generateWithLLM(patchPrompt, writingModel);
+      // Injecte les sections patchées avant la FAQ si elle existe
+      const faqMarker = aiOutput.html.includes('<h2') ? aiOutput.html.lastIndexOf('<!-- wp:heading') : aiOutput.html.length;
+      aiOutput.html = aiOutput.html.substring(0, faqMarker) + patchedHtml + aiOutput.html.substring(faqMarker);
+    }
+
+    let finalHtml = (aiOutput.html || '').replace(/\{[\s\S]*?"@context":\s*"https:\/\/schema\.org"[\s\S]*?\}/gi, '').trim();
+
+    if (!finalHtml || finalHtml.trim().length < 100) {
+      throw new Error('Contenu généré vide ou trop court — publication annulée.');
+    }
+
+    // Injection FAQ JSON-LD
+    if (opts.faq_jsonld && aiOutput.faq && aiOutput.faq.length > 0) {
+      console.log('  ❓ Ajout du FAQ Schema (JSON-LD)...');
+      const faqItems = aiOutput.faq.map(f => ({
+        '@type': 'Question',
+        'name': f.question,
+        'acceptedAnswer': { '@type': 'Answer', 'text': f.answer },
+      }));
+      finalHtml += `\n<!-- wp:html -->\n<script type="application/ld+json">\n${JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        'mainEntity': faqItems,
+      }, null, 2)}\n</script>\n<!-- /wp:html -->\n`;
+    }
+
+    // ── PHASE 3 : Médias (Runware, en parallèle) ──────────────────────────
+    console.log('🖼️ [CUSTOM] Phase 3: Génération des médias...');
+
+    const featuredImageStyle = opts.featured_image_style || 'photorealistic';
+    const stylePhotos = { photorealistic: '', cartoon: ', cartoon style, flat illustration, vibrant colors', illustration: ', digital illustration, artistic style', drawing: ', hand drawn illustration, sketch style' };
+    const styleSuffix = stylePhotos[featuredImageStyle] || '';
+
+    const featuredPrompt = (aiOutput.metadata.image_generation_prompt || `${keyword}, professional photo`) + styleSuffix;
+
+    // Prépare les prompts images de section
+    const sectionImagePrompts = [];
+    const sectionStyle = stylePhotos[opts.section_image_style] || '';
+    if (sectionImgCount > 0 && strategicBrief.section_image_prompts) {
+      for (let i = 0; i < sectionImgCount; i++) {
+        const p = strategicBrief.section_image_prompts[i];
+        if (p) sectionImagePrompts.push(p + sectionStyle);
+      }
+    }
+
+    // Modèle infographie
+    const infographicRunwareModel = opts.infographic_model === 'flux' ? 'runware:400@1' : 'google:4@3';
+
+    // Lancement parallèle de toutes les images
+    const mediaPromises = [
+      generateRunwareImage(featuredPrompt, 'photo'),
+      ...(opts.infographic && strategicBrief.infographic_prompt
+        ? [generateRunwareImage(strategicBrief.infographic_prompt, 'infographic', 3, infographicRunwareModel)]
+        : [Promise.resolve(null)]),
+      ...sectionImagePrompts.map(p => generateRunwareImage(p, 'photo')),
+    ];
+
+    const [featuredImageUrl, infographicUrl, ...sectionImageUrls] = await Promise.all(mediaPromises);
+
+    // Injection des images de section dans le HTML
+    if (sectionImageUrls.length > 0) {
+      finalHtml = injectSectionImages(finalHtml, sectionImageUrls);
+    }
+
+    // ── PHASE 4 : Publication ──────────────────────────────────────────────
+    console.log('📤 [CUSTOM] Phase 4: Publication WordPress...');
+
+    const isBridgeMode = site.connection_mode === 'bridge_plugin';
+    const infographicAlt = `Infographie : ${keyword}`;
+
+    // Traitement infographie
+    if (infographicUrl) {
+      let infoImgSrc = null;
+      if (isBridgeMode) {
+        infoImgSrc = infographicUrl;
+      } else {
+        const infoMedia = await uploadImageToWordPress(site.url, site.wp_user, wpPassword, infographicUrl, infographicAlt, 'rest_api', site.bridge_key);
+        if (infoMedia?.url) infoImgSrc = infoMedia.url;
+      }
+
+      if (infoImgSrc) {
+        const imgHtml = `\n<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${infoImgSrc}" alt="${infographicAlt}"/></figure><!-- /wp:image -->\n`;
+        const parts = finalHtml.split(/<h2/i);
+        finalHtml = parts.length > 2
+          ? parts[0] + '<h2' + parts[1] + imgHtml + parts.slice(2).map(p => '<h2' + p).join('')
+          : finalHtml + imgHtml;
+      }
+    }
+
+    const categories = await getCategories(site);
+    const categoryId = await classifyArticle(aiOutput.metadata.title, aiOutput.metadata.excerpt, categories);
+
+    const featuredMedia = await uploadImageToWordPress(
+      site.url, site.wp_user, wpPassword,
+      featuredImageUrl, aiOutput.metadata.title,
+      site.connection_mode, site.bridge_key
+    );
+
+    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, {
+      title: aiOutput.metadata.title,
+      content: finalHtml,
+      excerpt: aiOutput.metadata.excerpt,
+      slug: aiOutput.metadata.slug,
+      status: job.custom_status || site.default_status || 'draft',
+      categories: [categoryId],
+      featured_media_id: featuredMedia?.id,
+      featured_media_url: featuredMedia?.url || featuredImageUrl,
+      date: job.scheduled_at || null,
+      infographic_url: infographicUrl || null,
+      infographic_alt: infographicUrl ? infographicAlt : null,
+    });
+
+    await supabase.from('articles_queue').update({
+      status: 'published',
+      processed_at: new Date(),
+      published_title: aiOutput.metadata.title,
+      published_url: pubResult.link,
+    }).eq('id', jobId);
+
+    await enqueueSocialPost(site.id, jobId, 'seo', job.scheduled_at);
+
+    if (pubResult.id) {
+      await upsertToWpCache({
+        userId: site.user_id,
+        wordpressSiteId: site.id,
+        wpPostId: pubResult.id,
+        title: aiOutput.metadata.title,
+        slug: aiOutput.metadata.slug,
+        link: pubResult.link,
+        status: job.custom_status || site.default_status || 'draft',
+        postDate: job.scheduled_at || new Date().toISOString(),
+      });
+    }
+
+    console.log(`✅ [CUSTOM] Succès : ${pubResult.link}`);
+    process.exit(0);
+
+  } catch (error) {
+    console.error(`❌ [CUSTOM] Erreur : ${error.message}`);
+    if (creditsSpent > 0) await refundCredit(site.user_id, creditsSpent, jobId);
+    await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
+    process.exit(1);
+  }
+}
+
+runCustomJob();
