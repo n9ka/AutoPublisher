@@ -18,9 +18,9 @@ const { repairJson } = require('./lib/json-helper');
 
 // Coûts fixes par composant (crédits)
 const FIXED_COSTS = {
-  research: 2,    // Brave + Tavily
-  infographic: 2, // Runware NanoBanana
-  section_img: 1, // Runware par image de section
+  research: 1,      // Brave + Tavily
+  infographic: 1.5, // Runware NanoBanana
+  section_img: 0.5, // Runware par image de section
 };
 
 /**
