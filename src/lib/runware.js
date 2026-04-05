@@ -2,12 +2,13 @@ const { Runware } = require('@runware/sdk-js');
 
 /**
  * Génère une image via Runware avec retry auto et fallback de modèle
- * @param {string} prompt 
+ * @param {string} prompt
  * @param {string} type "photo" ou "infographic"
- * @param {number} retries 
+ * @param {number} retries
  * @param {string} modelId Optionnel : Forcer un modèle spécifique
+ * @param {boolean} noDefaultStyle Si true, n'ajoute pas le suffixe "photorealistic, 4k, sharp focus" (style déjà dans le prompt)
  */
-async function generateRunwareImage(prompt, type = "photo", retries = 3, modelId = null) {
+async function generateRunwareImage(prompt, type = "photo", retries = 3, modelId = null, noDefaultStyle = false) {
   const apiKey = process.env.RUNWARE_API_KEY;
 
   if (!apiKey) {
@@ -37,7 +38,7 @@ async function generateRunwareImage(prompt, type = "photo", retries = 3, modelId
     
     console.log(`    📊 Mode Infographie activé (Tentative Model: ${model} en ${width}x${height})`);
   } else {
-    finalPrompt = `${prompt}, photorealistic, 4k, sharp focus`;
+    finalPrompt = noDefaultStyle ? prompt : `${prompt}, photorealistic, 4k, sharp focus`;
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {

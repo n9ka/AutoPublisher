@@ -264,7 +264,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     console.log('🖼️ [CUSTOM] Phase 3: Génération des médias...');
 
     const featuredImageStyle = opts.featured_image_style || 'photorealistic';
-    const stylePhotos = { photorealistic: '', cartoon: ', cartoon style, flat illustration, vibrant colors', illustration: ', digital illustration, artistic style', drawing: ', hand drawn illustration, sketch style' };
+    const stylePhotos = { photorealistic: ', photorealistic, 4k, sharp focus', cartoon: ', cartoon style, flat illustration, vibrant colors', illustration: ', digital illustration, artistic style', drawing: ', hand drawn illustration, sketch style' };
     const styleSuffix = stylePhotos[featuredImageStyle] || '';
 
     const featuredPrompt = (aiOutput.metadata.image_generation_prompt || `${keyword}, professional photo`) + styleSuffix;
@@ -290,12 +290,13 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     const infographicRunwareModel = opts.infographic_model === 'flux' ? 'runware:400@1' : 'google:4@3';
 
     // Lancement parallèle de toutes les images
+    // noDefaultStyle=true : le style est déjà dans le prompt via styleSuffix/sectionStyle
     const mediaPromises = [
-      generateRunwareImage(featuredPrompt, 'photo'),
+      generateRunwareImage(featuredPrompt, 'photo', 3, null, true),
       ...(opts.infographic && strategicBrief.infographic_prompt
         ? [generateRunwareImage(strategicBrief.infographic_prompt, 'infographic', 3, infographicRunwareModel)]
         : [Promise.resolve(null)]),
-      ...sectionImagePrompts.map(p => generateRunwareImage(p, 'photo')),
+      ...sectionImagePrompts.map(p => generateRunwareImage(p, 'photo', 3, null, true)),
     ];
 
     const [featuredImageUrl, infographicUrl, ...sectionImageUrls] = await Promise.all(mediaPromises);
