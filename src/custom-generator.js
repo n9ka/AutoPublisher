@@ -182,12 +182,20 @@ async function runCustomJob() {
 
     const persona = site.persona || {};
 
-    const readingTimeRule = opts.reading_time
-      ? `### 1. TEMPS DE LECTURE — PREMIER ÉLÉMENT ABSOLU (RIEN AVANT, même pas une phrase d'intro)\n<!-- wp:paragraph --><p class="reading-time" style="font-style:italic;margin-bottom:20px;"><i class="fa-solid fa-clock"></i> Temps de lecture : X min</p><!-- /wp:paragraph -->\n(Calcule X = nb_mots_article / 200, arrondi au supérieur.)\n\n### 2. POINTS CLÉS À RETENIR — OBLIGATOIRE juste après le temps de lecture\n<!-- wp:group {"className":"key-takeaways"} --><div class="wp-block-group"><h3><i class="fa-solid fa-lightbulb"></i> Points clés à retenir</h3><ul class="wp-block-list"><li>...</li></ul></div><!-- /wp:group -->\n(3-4 points. Commence chaque point par un <strong>mot-clé en gras</strong>. Répond directement à l'intention de recherche.)`
-      : `### 1. POINTS CLÉS À RETENIR — PREMIER ÉLÉMENT ABSOLU (RIEN AVANT)\n<!-- wp:group {"className":"key-takeaways"} --><div class="wp-block-group"><h3><i class="fa-solid fa-lightbulb"></i> Points clés à retenir</h3><ul class="wp-block-list"><li>...</li></ul></div><!-- /wp:group -->\n(3-4 points. Commence chaque point par un <strong>mot-clé en gras</strong>.)`;
+    let stepNum = 1;
+    const readingTimeBlock = opts.reading_time
+      ? `### ${stepNum++}. TEMPS DE LECTURE — PREMIER ÉLÉMENT ABSOLU (RIEN AVANT, même pas une phrase d'intro)\n<!-- wp:paragraph --><p class="reading-time" style="font-style:italic;margin-bottom:20px;"><i class="fa-solid fa-clock"></i> Temps de lecture : X min</p><!-- /wp:paragraph -->\n(Calcule X = nb_mots_article / 200, arrondi au supérieur.)`
+      : '';
+
+    const keyTakeawaysBlock = opts.key_takeaways
+      ? `### ${stepNum++}. POINTS CLÉS À RETENIR — juste après le temps de lecture (ou en premier si pas de temps de lecture)\n<!-- wp:group {"className":"key-takeaways"} --><div class="wp-block-group"><h3><i class="fa-solid fa-lightbulb"></i> Points clés à retenir</h3><ul class="wp-block-list"><li>...</li></ul></div><!-- /wp:group -->\n(3-4 points. Commence chaque point par un <strong>mot-clé en gras</strong>. Répond directement à l'intention de recherche.)`
+      : '';
+
+    const readingTimeRule = [readingTimeBlock, keyTakeawaysBlock].filter(Boolean).join('\n\n') ||
+      '### 1. PREMIER ÉLÉMENT — commence directement le corps de l\'article sans intro générique.';
 
     const tocRule = opts.table_of_contents
-      ? `### 3. SOMMAIRE — utilise UNIQUEMENT ce shortcode Gutenberg (ne jamais coder le sommaire en HTML) :\n<!-- wp:shortcode -->[ez-toc]<!-- /wp:shortcode -->`
+      ? `### ${stepNum++}. SOMMAIRE — utilise UNIQUEMENT ce shortcode Gutenberg (ne jamais coder le sommaire en HTML) :\n<!-- wp:shortcode -->[ez-toc]<!-- /wp:shortcode -->`
       : '';
 
     const faqRule = opts.faq
