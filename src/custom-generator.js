@@ -181,15 +181,15 @@ async function runCustomJob() {
     const persona = site.persona || {};
 
     const readingTimeRule = opts.reading_time
-      ? `## Temps de Lecture\nAjoute en début d'article (après le premier paragraphe d'intro) un bloc <!-- wp:paragraph --><p><i class="fa fa-clock-o"></i> <strong>Temps de lecture estimé : X minutes</strong></p><!-- /wp:paragraph --> où X est calculé selon environ 200 mots/minute.`
+      ? `### PREMIER ÉLÉMENT ABSOLU (RIEN AVANT, PAS MÊME UNE PHRASE D'INTRO)\n<!-- wp:paragraph --><p class="reading-time" style="font-style:italic;margin-bottom:20px;"><i class="fa-solid fa-clock"></i> Temps de lecture : X min</p><!-- /wp:paragraph -->\n(Calcule X = nb_mots_estimés / 200. Puis écris le corps de l'article.)`
       : '';
 
     const tocRule = opts.table_of_contents
-      ? `## Sommaire (Table des Matières)\nAjoute un bloc sommaire cliquable après le premier paragraphe. Format : <!-- wp:group --><div class="wp-block-group"><h2>Sommaire</h2><ul>...liens vers chaque H2...</ul></div><!-- /wp:group -->`
+      ? `### Sommaire — utilise UNIQUEMENT ce shortcode (ne pas coder le sommaire en dur) :\n<!-- wp:shortcode -->[ez-toc]<!-- /wp:shortcode -->`
       : '';
 
     const faqRule = opts.faq
-      ? `## Section FAQ\nAjoute une section FAQ complète à la fin de l'article (avant la conclusion). Utilise les questions/réponses du brief. Format H2 "Questions fréquentes" + couples question/réponse en paragraphes.`
+      ? `### Section FAQ (fin d'article, avant conclusion)\nUtilise les questions du brief. Format :\n<!-- wp:heading {"level":2} --><h2 class="wp-block-heading"><i class="fa-solid fa-circle-question"></i> Questions fréquentes</h2><!-- /wp:heading -->\nPour chaque Q/R : <!-- wp:paragraph --><p><strong><i class="fa-solid fa-circle-question"></i> Question ?</strong></p><!-- /wp:paragraph --><!-- wp:paragraph --><p>Réponse concise.</p><!-- /wp:paragraph -->`
       : '';
 
     const writingInstructionsBlock = opts.writing_instructions
@@ -283,15 +283,32 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
 
     const [featuredImageUrl, infographicUrl, ...sectionImageUrls] = await Promise.all(mediaPromises);
 
-    // Injection des images de section dans le HTML
-    if (sectionImageUrls.length > 0) {
-      finalHtml = injectSectionImages(finalHtml, sectionImageUrls);
-    }
-
     // ── PHASE 4 : Publication ──────────────────────────────────────────────
     console.log('📤 [CUSTOM] Phase 4: Publication WordPress...');
 
     const isBridgeMode = site.connection_mode === 'bridge_plugin';
+
+    // Upload des images de section vers WordPress (ou URL directe en mode Bridge)
+    if (sectionImageUrls.length > 0) {
+      const uploadedSectionUrls = await Promise.all(
+        sectionImageUrls.map(async (url, idx) => {
+          if (!url) return null;
+          if (isBridgeMode) return url; // Bridge : le plugin gère le sideload
+          try {
+            const media = await uploadImageToWordPress(
+              site.url, site.wp_user, wpPassword,
+              url, `${keyword} — image ${idx + 1}`,
+              'rest_api', site.bridge_key
+            );
+            return media?.url || url;
+          } catch {
+            console.warn(`  ⚠️ Upload image section ${idx + 1} échoué — URL Runware utilisée en fallback`);
+            return url;
+          }
+        })
+      );
+      finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls);
+    }
     const infographicAlt = `Infographie : ${keyword}`;
 
     // Traitement infographie
