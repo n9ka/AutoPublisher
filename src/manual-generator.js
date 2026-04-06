@@ -54,6 +54,11 @@ async function runManualJob() {
 
   const currentDate = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
+  const outputLanguage = job.custom_options?.output_language || 'fr';
+  const languageNames = { fr: 'français', en: 'anglais', es: 'espagnol', de: 'allemand', it: 'italien', pt: 'portugais' };
+  const languageName = languageNames[outputLanguage] || outputLanguage;
+  const languageBlock = `# LANGUE — RÈGLE ABSOLUE\nTu dois rédiger EXCLUSIVEMENT en ${languageName}.\nAucun mot, caractère ou expression dans une autre langue n'est autorisé, quelle que soit la langue du modèle sous-jacent ou des données sources.\nSi les données sources contiennent du contenu dans une autre langue, traduis-le en ${languageName}.\nToute sortie contenant des caractères non-latins (chinois, japonais, arabe, cyrillique, etc.) est une erreur critique.`;
+
   try {
     let finalHtml = "";
     let aiMetadata = {};
@@ -76,10 +81,12 @@ async function runManualJob() {
         .replace('{{target_keyword}}', job.source_title)
         .replace('{{brave_results}}', braveData)
         .replace('{{perplexity_results}}', expertResearch)
+        .replace('{{language_block}}', languageBlock)
         .replace(/\{\{current_date\}\}/g, currentDate), 'deepseek-reasoner');
 
       const expertPersona = site.persona || {};
       const writerPrompt = EXPERT_WRITER_PROMPT
+        .replace('{{language_block}}', languageBlock)
         .replace('{{strategic_brief}}', strategicBrief)
         .replace('{{persona_nom}}', expertPersona.name || 'Expert')
         .replace('{{persona_background}}', expertPersona.background || '')
@@ -142,6 +149,7 @@ async function runManualJob() {
       const expressPrompt = SEO_GENERATOR_PROMPT
         .replace('{{target_keyword}}', job.source_title)
         .replace('{{search_results}}', searchResults)
+        .replace('{{language_block}}', languageBlock)
         .replace(/\{\{current_date\}\}/g, currentDate)
         .replace('{{target_length}}', expressLength)
         .replace('{{persona_nom}}', persona.name || 'Expert')

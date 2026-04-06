@@ -11,6 +11,7 @@
  * @param {string} modelConfig.api_key_env
  * @param {string} modelConfig.model_id
  * @param {number|null} modelConfig.max_output_tokens
+ * @param {string[]|null} modelConfig.provider_order — ordre de préférence des providers OpenRouter (ex: ["io.net"])
  * @returns {Promise<string>} — contenu texte de la réponse
  */
 async function generateWithLLM(prompt, modelConfig) {
@@ -26,6 +27,10 @@ async function generateWithLLM(prompt, modelConfig) {
 
   if (modelConfig.max_output_tokens) {
     body.max_tokens = modelConfig.max_output_tokens;
+  }
+
+  if (modelConfig.provider_order && Array.isArray(modelConfig.provider_order) && modelConfig.provider_order.length > 0) {
+    body.provider = { order: modelConfig.provider_order };
   }
 
   const res = await fetch(`${modelConfig.api_base_url}/chat/completions`, {

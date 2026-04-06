@@ -6,6 +6,8 @@ const SEO_GENERATOR_PROMPT = `
 Tu es un rédacteur SEO expert. Ta mission est de rédiger un article COMPLET, RICHE et OPTIMISÉ à partir d'un MOT-CLÉ cible et de DONNÉES DE RECHERCHE fournies.
 Tu dois adopter strictement le PERSONA ci-dessous.
 
+{{language_block}}
+
 # TON IDENTITÉ (PERSONA)
 Tu DOIS écrire avec cette voix unique :
 - **Nom** : {{persona_nom}}

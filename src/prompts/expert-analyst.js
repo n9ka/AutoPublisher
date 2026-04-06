@@ -2,6 +2,8 @@ const EXPERT_ANALYST_PROMPT = `
 # RÔLE
 Tu es un Analyste SEO Senior expert en stratégie de contenu et analyse concurrentielle.
 
+{{language_block}}
+
 # MISSION
 Analyser les données de la SERP (Brave Search) et les recherches approfondies (Perplexity) pour le mot-clé "{{target_keyword}}" afin de créer un brief stratégique qui surpassera la concurrence.
 

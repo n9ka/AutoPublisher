@@ -74,10 +74,22 @@ async function checkAutoSeo(site) {
     return false;
   }
 
-  // 5. Vérifier les crédits selon le mode (Express: 3, Expert: 5)
+  // 5. Vérifier les crédits selon le mode (Express: 3, Expert: 5, Custom: variable)
   // On utilise le mode défini dans le backlog, ou celui par défaut du site
   const mode = backlogItem.generation_mode || site.auto_seo_mode || 'express';
-  const cost = mode === 'expert' ? 5 : 3;
+  let cost;
+  if (mode === 'custom') {
+    const opts = backlogItem.custom_options || site.auto_custom_config;
+    if (!opts || !opts.brief_model_id || !opts.model_id) {
+      console.log(`  ⚠️  AutoPilot : Mode Personnalisé non configuré pour "${backlogItem.keyword}". Configurez le mode dans l'onglet Configuration du SEO Lab.`);
+      return false;
+    }
+    const briefCredits = opts?.brief_credits || 2;
+    const writingCredits = opts?.writing_credits || 4;
+    cost = 1 + briefCredits + writingCredits; // research(1) + brief + writing
+  } else {
+    cost = mode === 'expert' ? 5 : 3;
+  }
   // Note : le mode 'manual' est exclu de la requête ci-dessus, ne doit jamais arriver ici
   
   const canAfford = await hasEnoughCredits(site.user_id, cost);
@@ -120,7 +132,8 @@ async function checkAutoSeo(site) {
     try {
       console.log(`  🚀 AutoPilot : Déclenchement du workflow GitHub pour le job ${newJobId}...`);
       const axios = require('axios');
-      await axios.post(`https://api.github.com/repos/${repo}/actions/workflows/manual-generator.yml/dispatches`, {
+      const workflowFile = mode === 'custom' ? 'custom-generator.yml' : 'manual-generator.yml';
+      await axios.post(`https://api.github.com/repos/${repo}/actions/workflows/${workflowFile}/dispatches`, {
         ref: 'main',
         inputs: { job_id: newJobId }
       }, {

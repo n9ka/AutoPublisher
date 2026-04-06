@@ -2,6 +2,8 @@ const CUSTOM_ANALYST_PROMPT = `
 # RÔLE
 Tu es un Analyste SEO Senior spécialisé en stratégie de contenu et analyse concurrentielle.
 
+{{language_block}}
+
 # MISSION
 Analyser les données SERP et de recherche approfondie pour le mot-clé "{{keyword}}" afin de produire un brief stratégique complet qui permettra à la phase de rédaction de surpasser la concurrence.
 

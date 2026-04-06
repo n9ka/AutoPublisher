@@ -162,6 +162,11 @@ async function runCustomJob() {
       ? `## Instructions Recherche Personnalisées\n${opts.research_instructions}`
       : '';
 
+    const outputLanguage = opts.output_language || 'fr';
+    const languageNames = { fr: 'français', en: 'anglais', es: 'espagnol', de: 'allemand', it: 'italien', pt: 'portugais' };
+    const languageName = languageNames[outputLanguage] || outputLanguage;
+    const languageBlock = `# LANGUE — RÈGLE ABSOLUE\nTu dois rédiger EXCLUSIVEMENT en ${languageName}.\nAucun mot, caractère ou expression dans une autre langue n'est autorisé, quelle que soit la langue du modèle sous-jacent ou des données sources.\nSi les données sources contiennent du contenu dans une autre langue, traduis-le en ${languageName}.\nToute sortie contenant des caractères non-latins (chinois, japonais, arabe, cyrillique, etc.) est une erreur critique.`;
+
     const analystPrompt = CUSTOM_ANALYST_PROMPT
       .replace('{{keyword}}', keyword)
       .replace('{{brave_results}}', braveResults || 'Aucun résultat Brave disponible')
@@ -169,6 +174,7 @@ async function runCustomJob() {
       .replace('{{options_json}}', JSON.stringify(opts, null, 2))
       .replace('{{target_length}}', targetLength)
       .replace('{{current_date}}', currentDate)
+      .replace('{{language_block}}', languageBlock)
       .replace('{{research_instructions_block}}', researchInstructionsBlock)
       .replace('{{infographic_brief_block}}', infographicBriefBlock)
       .replace('{{section_images_block}}', sectionImagesBlock);
@@ -207,12 +213,14 @@ async function runCustomJob() {
       : '';
 
     const writerPrompt = CUSTOM_WRITER_PROMPT
+      .replace('{{language_block}}', languageBlock)
       .replace('{{strategic_brief}}', JSON.stringify(strategicBrief, null, 2))
       .replace('{{persona_nom}}', persona.name || 'Expert')
       .replace('{{persona_background}}', persona.background || '')
       .replace('{{persona_specialite}}', persona.specialty || '')
       .replace('{{persona_ton}}', persona.tone || 'Professionnel')
       .replace('{{persona_tics_langage}}', persona.tics || '')
+      .replace('{{persona_particularites}}', persona.particularities || '')
       .replace('{{persona_utilise_je}}', persona.use_first_person ? 'Oui (Utilise "Je")' : 'Non (Reste impersonnel)')
       .replace('{{humanization_level}}', persona.humanization_level || 'medium')
       .replace('{{options_json}}', JSON.stringify(opts, null, 2))
