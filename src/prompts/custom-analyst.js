@@ -34,15 +34,15 @@ Analyser les données SERP et de recherche approfondie pour le mot-clé "{{keywo
 
 4. **H1 recommandé** : H1 optimisé avec hook CTR fort + 2 alternatives.
 
-5. **Mots-clés secondaires (5-8)** : Pour chaque terme — intention, section cible (`section_hint`), présence chez les concurrents. Ajoute 5-8 long-tails avec leur intention précise.
+5. **Mots-clés secondaires (5-8)** : Pour chaque terme — intention, section cible (\`section_hint\`), présence chez les concurrents. Ajoute 5-8 long-tails avec leur intention précise.
 
 6. **Plan H2/H3 (6-8 sections)** pour {{target_length}} mots. Pour chaque H2 :
-   - `angle` : données chiffrées et angle éditorial à développer
-   - `keyword_focus` : mot-clé secondaire ou entité LSI à cibler dans cette section
-   - `voice_questions` : 1-2 questions vocales naturelles à couvrir
-   - `target_words` : mots alloués (répartis selon importance — section FS et content gaps = plus de mots)
-   - `h3s` : sous-sections si nécessaire
-   - `suggested_modules` : modules rich content obligatoires (tableau avec colonnes, encadré conseil/avertissement/définition, anecdote avec angle narratif) — omettre si non pertinent
+   - \`angle\` : données chiffrées et angle éditorial à développer
+   - \`keyword_focus\` : mot-clé secondaire ou entité LSI à cibler dans cette section
+   - \`voice_questions\` : 1-2 questions vocales naturelles à couvrir
+   - \`target_words\` : mots alloués (répartis selon importance — section FS et content gaps = plus de mots)
+   - \`h3s\` : sous-sections si nécessaire
+   - \`suggested_modules\` : modules rich content obligatoires (tableau avec colonnes, encadré conseil/avertissement/définition, anecdote avec angle narratif) — omettre si non pertinent
 
 7. **Entités LSI** : 8-12 entités sémantiques obligatoires.
 
@@ -54,7 +54,7 @@ Analyser les données SERP et de recherche approfondie pour le mot-clé "{{keywo
 
 11. **Featured Snippet Target** : section H2 avec meilleur potentiel Position 0, format attendu (paragraph/list/table), draft de réponse directe prêt à l'emploi dans ce format (40-60 mots si paragraphe, 5-8 points si liste, 2 colonnes si tableau).
 
-12. **Signaux E-E-A-T** : extrais des résultats Tavily les statistiques chiffrées réelles avec source et année. Ne jamais inventer une donnée. Si aucune stat disponible dans les sources, laisser `data_points` vide. Indique le type de signal d'expérience terrain adapté à la niche.
+12. **Signaux E-E-A-T** : extrais des résultats Tavily les statistiques chiffrées réelles avec source et année. Ne jamais inventer une donnée. Si aucune stat disponible dans les sources, laisser \`data_points\` vide. Indique le type de signal d'expérience terrain adapté à la niche.
 
 {{infographic_brief_block}}
 
