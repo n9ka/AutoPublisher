@@ -331,12 +331,29 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
 
     const isBridgeMode = site.connection_mode === 'bridge_plugin';
 
-    // Upload des images de section vers WordPress (ou URL directe en mode Bridge)
+    // Calcul du point d'insertion de l'infographie (milieu de l'article)
+    const HEADING_MARKER = '<!-- wp:heading {"level":2}';
+    const h2Count = (finalHtml.match(/<!-- wp:heading \{"level":2\}/g) || []).length;
+    const infographicAtH2 = h2Count > 0 ? Math.floor(h2Count / 2) : 0;
+
+    // Si infographie activée : les images de section démarrent après la position de l'infographie
+    // → on supprime les markers SECTION_IMAGE avant la position d'insertion, on renumérote les suivants
+    if (infographicUrl && sectionImgCount > 0) {
+      for (let i = 1; i <= infographicAtH2; i++) {
+        finalHtml = finalHtml.replace(`<!-- SECTION_IMAGE_${i} -->`, '');
+      }
+      // Renumérote en ordre décroissant pour éviter les collisions
+      for (let i = infographicAtH2 + sectionImgCount; i >= infographicAtH2 + 1; i--) {
+        finalHtml = finalHtml.replace(`<!-- SECTION_IMAGE_${i} -->`, `<!-- SECTION_IMAGE_${i - infographicAtH2} -->`);
+      }
+    }
+
+    // Upload et injection des images de section
     if (sectionImageUrls.length > 0) {
       const uploadedSectionUrls = await Promise.all(
         sectionImageUrls.map(async (url, idx) => {
           if (!url) return null;
-          if (isBridgeMode) return url; // Bridge : le plugin gère le sideload
+          if (isBridgeMode) return url;
           try {
             const media = await uploadImageToWordPress(
               site.url, site.wp_user, wpPassword,
@@ -352,9 +369,11 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       );
       finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls, sectionImageAltTexts);
     }
+
     const infographicAlt = `Infographie : ${keyword}`;
 
-    // Traitement infographie
+    // Injection de l'infographie au milieu de l'article
+    // Split sur le commentaire Gutenberg complet pour ne pas casser la structure des blocs
     if (infographicUrl) {
       let infoImgSrc = null;
       if (isBridgeMode) {
@@ -366,10 +385,14 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
 
       if (infoImgSrc) {
         const imgHtml = `\n<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${infoImgSrc}" alt="${infographicAlt}"/></figure><!-- /wp:image -->\n`;
-        const parts = finalHtml.split(/<h2/i);
-        finalHtml = parts.length > 2
-          ? parts[0] + '<h2' + parts[1] + imgHtml + parts.slice(2).map(p => '<h2' + p).join('')
-          : finalHtml + imgHtml;
+        const parts = finalHtml.split(HEADING_MARKER);
+        if (parts.length > infographicAtH2 + 1) {
+          const before = parts.slice(0, infographicAtH2 + 1).map((p, i) => i > 0 ? HEADING_MARKER + p : p).join('');
+          const after = parts.slice(infographicAtH2 + 1).map(p => HEADING_MARKER + p).join('');
+          finalHtml = before + imgHtml + after;
+        } else {
+          finalHtml = finalHtml + imgHtml;
+        }
       }
     }
 
