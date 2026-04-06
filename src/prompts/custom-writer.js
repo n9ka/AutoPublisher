@@ -82,7 +82,7 @@ LA DATE ACTUELLE EST : **{{current_date}}**. Interdiction d'écrire "2024" ou "2
 - Listes : <!-- wp:list --><ul class="wp-block-list"><li>...</li></ul><!-- /wp:list -->
 - Tableaux : <!-- wp:table --><figure class="wp-block-table"><table><thead>...</thead><tbody>...</tbody></table></figure><!-- /wp:table -->
   ⚠️ Jamais de className, is-style-stripes ou attribut supplémentaire sur les tableaux.
-- Images : laisse <!-- SECTION_IMAGE_N --> à la fin de chaque H2 (N commence à 1). Le Node.js les remplacera.
+{{section_images_rule}}
 
 {{faq_rule}}
 

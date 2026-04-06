@@ -227,7 +227,12 @@ async function runCustomJob() {
 - Petites auto-corrections ou apartés dans la voix du PERSONA`
     }[humanizationLevel] || '';
 
+    const sectionImagesRule = sectionImgCount > 0
+      ? `- Images : laisse <!-- SECTION_IMAGE_N --> à la fin de chaque H2 (N commence à 1). Le Node.js les remplacera.`
+      : `- Images : N'insère AUCUNE image ni marqueur dans le corps de l'article. Pas de <!-- SECTION_IMAGE -->, pas de texte de placeholder, pas de balise <img>.`;
+
     const writerPrompt = CUSTOM_WRITER_PROMPT
+      .replace('{{section_images_rule}}', sectionImagesRule)
       .replace('{{language_block}}', languageBlock)
       .replace('{{strategic_brief}}', JSON.stringify(strategicBrief, null, 2))
       .replace('{{persona_nom}}', persona.name || 'Expert')
