@@ -155,7 +155,7 @@ async function runCustomJob() {
       : '';
 
     const sectionImagesBlock = sectionImgCount > 0
-      ? `## Prompts Images de Section\nGénère ${sectionImgCount} prompts en anglais dans "section_image_prompts", un par H2 principal. Chaque prompt doit décrire une photographie professionnelle textless liée à la section.`
+      ? `## Prompts Images de Section\nGénère ${sectionImgCount} entrées dans "section_image_prompts" (prompts EN ANGLAIS pour Runware : photographie professionnelle textless, sujet unique) ET ${sectionImgCount} entrées dans "section_image_alts" (textes alternatifs EN FRANÇAIS, 60-80 caractères, intègrent le mot-clé de la section correspondante, descriptifs et naturels).`
       : '';
 
     const researchInstructionsBlock = opts.research_instructions
@@ -212,6 +212,21 @@ async function runCustomJob() {
       ? `## Instructions Rédaction Personnalisées\n${opts.writing_instructions}`
       : '';
 
+    const humanizationLevel = persona.humanization_level || 'medium';
+    const humanizationInstructionsBlock = {
+      low: `**Niveau LOW** : Élimine uniquement les formules robotiques. Phrases directes. Ton fidèle au PERSONA défini ci-dessus.`,
+      medium: `**Niveau MEDIUM** :
+- Exprime-toi avec les **Expressions favorites** et les **Particularités** définies dans TON IDENTITÉ ci-dessus
+- Varie la longueur des phrases (courtes percutantes + longues explicatives)
+- Glisse 3-5 reformulations spontanées cohérentes avec le ton du PERSONA
+- Inclus 1-2 questions rhétoriques adressées au lecteur`,
+      high: `**Niveau HIGH** :
+- Incarne pleinement le PERSONA : chaque phrase doit refléter ses **Expressions favorites**, son **Ton** et ses **Particularités**
+- Permets-toi des phrases débutant par une conjonction, des parenthèses conversationnelles, dans le style propre au PERSONA
+- Intègre 1-2 anecdotes ou observations de terrain cohérentes avec le **Background** et la **Spécialité** du PERSONA
+- Petites auto-corrections ou apartés dans la voix du PERSONA`
+    }[humanizationLevel] || '';
+
     const writerPrompt = CUSTOM_WRITER_PROMPT
       .replace('{{language_block}}', languageBlock)
       .replace('{{strategic_brief}}', JSON.stringify(strategicBrief, null, 2))
@@ -229,7 +244,8 @@ async function runCustomJob() {
       .replace('{{reading_time_rule}}', readingTimeRule)
       .replace('{{toc_rule}}', tocRule)
       .replace('{{faq_rule}}', faqRule)
-      .replace('{{writing_instructions_block}}', writingInstructionsBlock);
+      .replace('{{writing_instructions_block}}', writingInstructionsBlock)
+      .replace('{{humanization_instructions_block}}', humanizationInstructionsBlock);
 
     let aiOutput = await generateWithLLM(writerPrompt, writingModel).then(raw => parseAiJson(raw));
 
@@ -286,8 +302,9 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
         const p = strategicBrief.section_image_prompts[i];
         if (p) {
           sectionImagePrompts.push(p + sectionStyle);
-          // Alt text = description courte du prompt (premiers 80 chars, sans style suffix)
-          sectionImageAltTexts.push(p.replace(/,.*$/, '').trim().substring(0, 80));
+          // Alt text SEO en français fourni par l'analyst — fallback sur keyword si absent
+          const seoAlt = (strategicBrief.section_image_alts || [])[i];
+          sectionImageAltTexts.push(seoAlt ? seoAlt.substring(0, 120) : keyword);
         }
       }
     }
