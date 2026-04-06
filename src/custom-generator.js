@@ -155,7 +155,7 @@ async function runCustomJob() {
       : '';
 
     const sectionImagesBlock = sectionImgCount > 0
-      ? `## Prompts Images de Section\nGénère ${sectionImgCount} entrées dans "section_image_prompts" (prompts EN ANGLAIS pour Runware : photographie professionnelle textless, sujet unique) ET ${sectionImgCount} entrées dans "section_image_alts" (textes alternatifs EN FRANÇAIS, 60-80 caractères, intègrent le mot-clé de la section correspondante, descriptifs et naturels).`
+      ? `## Prompts Images de Section\nGénère ${sectionImgCount} entrées dans "section_image_prompts" (prompts EN ANGLAIS pour Runware : photographie professionnelle, textless, no text, no words, no letters, sujet unique) ET ${sectionImgCount} entrées dans "section_image_alts" (textes alternatifs EN FRANÇAIS, 60-80 caractères, intègrent le mot-clé de la section correspondante, descriptifs et naturels).`
       : '';
 
     const researchInstructionsBlock = opts.research_instructions
