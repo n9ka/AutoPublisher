@@ -8,6 +8,7 @@ const { decrypt } = require('./lib/encryption');
 const { generateContent: generateDeepSeek } = require('./lib/deepseek');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { enrichOpportunitiesWithGsc } = require('./lib/gsc');
 
 const STOP_WORDS = ['et', 'de', 'du', 'le', 'la', 'les', 'des', 'un', 'une', 'pour', 'dans', 'sur', 'd', 'l', 'au', 'aux'];
 
@@ -159,6 +160,9 @@ async function runDiscovery(siteId) {
       });
     }
   }
+
+  // Enrichissement GSC — skip silencieux si aucun mapping configuré pour ce site
+  await enrichOpportunitiesWithGsc(opportunities, siteId, supabase);
 
   await supabase.from('seo_opportunities').insert(opportunities);
   await supabase.from('wordpress_sites').update({ is_lab_scanning: false }).eq('id', siteId);

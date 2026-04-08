@@ -152,7 +152,7 @@ async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
 
   } catch (error) {
     const errorData = error.response ? error.response.data : error.message;
-    const status = error.response ? error.response.status : 0;
+    const status = error._httpStatus || (error.response ? error.response.status : 0);
     console.error(`Erreur publication WP (${useBridge ? 'BRIDGE' : 'REST'}):`, status);
 
     const err = new Error(typeof errorData === 'object' ? JSON.stringify(errorData) : (errorData || error.message));
@@ -184,7 +184,7 @@ async function publishPost(siteConfig, postData) {
 
     const shouldFallback = primaryIsBridge
       ? canFallbackToRest // Bridge échoue → tenter REST
-      : (canFallbackToBridge && [401, 403, 453].includes(status)); // REST bloqué → tenter Bridge
+      : (canFallbackToBridge && ([401, 403, 453].includes(status) || status === 0)); // REST bloqué → tenter Bridge
 
     if (shouldFallback) {
       const direction = primaryIsBridge ? 'BRIDGE→REST' : 'REST→BRIDGE';
