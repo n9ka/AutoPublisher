@@ -173,8 +173,8 @@ async function processQueue() {
         ).data?.user_id;
 
         if (userId) {
-          await spendCredit(userId, 1, job.article_id);
-          console.log(`  💳 1 crédit débité`);
+          await spendCredit(userId, 0.5, job.article_id);
+          console.log(`  💳 0.5 crédit débité`);
         }
       } catch (creditErr) {
         console.warn(`  ⚠️  Crédit non débité : ${creditErr.message}`);
