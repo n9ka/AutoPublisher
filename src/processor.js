@@ -13,6 +13,7 @@ const { MAIN_PROMPT } = require('./prompts/templates');
 const { TREND_SPY_PROMPT } = require('./prompts/trend-spy');
 const { repairJson } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
+const { sendTelegram } = require('./lib/telegram');
 
 async function processNextArticle() {
   console.log('⚙️  Recherche d\'un article en attente...');
@@ -27,7 +28,7 @@ async function processNextArticle() {
 
   if (queueError || !queueItem) {
     console.log('💤 Aucun article en attente.');
-    return false;
+    return null;
   }
 
   const articleId = queueItem.id;
@@ -179,13 +180,14 @@ async function processNextArticle() {
       console.log('  [DRY RUN] Payload OK');
       await supabase
         .from('articles_queue')
-        .update({ 
-          status: 'published', 
+        .update({
+          status: 'published',
           processed_at: new Date(),
           published_title: wpData.title,
           published_url: 'https://dry-run.test'
         })
         .eq('id', articleId);
+      return { status: 'published', title: wpData.title, url: 'https://dry-run.test', siteName: site.name, credits: creditsSpent };
     } else {
       const secureSiteConfig = { ...site, wp_password: wpPassword };
       const pubResult = await publishPost(secureSiteConfig, postPayload);
@@ -225,13 +227,13 @@ async function processNextArticle() {
           postDate: new Date().toISOString(),
         });
       }
-    }
 
-    return true;
+      return { status: 'published', title: wpData.title, url: pubResult.link, siteName: site.name, credits: creditsSpent };
+    }
 
   } catch (error) {
     console.error(`  ❌ ERREUR: ${error.message}`);
-    
+
     // NOUVEAU : Remboursement automatique en cas d'échec
     if (creditsSpent > 0) {
       try {
@@ -245,12 +247,12 @@ async function processNextArticle() {
     await supabase
       .from('articles_queue')
       .update({
-        status: 'failed', 
+        status: 'failed',
         error_message: error.message,
-        processed_at: new Date() 
+        processed_at: new Date()
       })
       .eq('id', articleId);
-    return true;
+    return { status: 'failed', title: queueItem.source_title, siteName: site?.name || '?', error: error.message };
   }
 }
 
@@ -288,27 +290,56 @@ function parseAiJson(text) {
 (async () => {
   console.log('📦 Démarrage du processeur...');
   const MAX_ARTICLES_PER_RUN = 20; // Sécurité pour éviter d'exploser les minutes GitHub
-  let processedCount = 0;
   let hasMore = true;
+  const published = [];
+  const failed = [];
 
-  while (hasMore && processedCount < MAX_ARTICLES_PER_RUN) {
-    const processed = await processNextArticle();
-    if (processed) {
-      processedCount++;
-      // Petite pause pour laisser respirer les API
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    } else {
+  while (hasMore && (published.length + failed.length) < MAX_ARTICLES_PER_RUN) {
+    const result = await processNextArticle();
+    if (result === null) {
       hasMore = false;
+    } else {
+      if (result.status === 'published') published.push(result);
+      else if (result.status === 'failed') failed.push(result);
+      await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
 
-  if (processedCount >= MAX_ARTICLES_PER_RUN) {
+  const total = published.length + failed.length;
+
+  if (total >= MAX_ARTICLES_PER_RUN) {
     console.log(`⚠️  Limite de ${MAX_ARTICLES_PER_RUN} articles atteinte pour ce run.`);
   }
 
-  console.log(`🏁 Fin du run. ${processedCount} article(s) traité(s).`);
+  console.log(`🏁 Fin du run. ${total} article(s) traité(s).`);
+
+  // Résumé Telegram
+  if (total > 0) {
+    const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+    const lines = [`📰 <b>Run AutoPublisher — ${date}</b>`];
+
+    if (published.length > 0) {
+      const totalCredits = published.reduce((sum, r) => sum + (r.credits || 0), 0);
+      lines.push(`\n✅ <b>${published.length} publié(s)</b>`);
+      for (const r of published) {
+        lines.push(`• <a href="${r.url}">${r.title}</a> — ${r.siteName}`);
+      }
+      lines.push(`\n💳 Crédits consommés : ${totalCredits}`);
+    }
+
+    if (failed.length > 0) {
+      lines.push(`\n❌ <b>${failed.length} échec(s)</b>`);
+      for (const r of failed) {
+        lines.push(`• ${r.title} — ${r.siteName}\n  └ ${r.error}`);
+      }
+    }
+
+    await sendTelegram(lines.join('\n'));
+  }
+
   process.exit(0);
-})().catch(error => {
+})().catch(async (error) => {
   console.error('💥 Erreur fatale:', error);
+  await sendTelegram(`💥 <b>Erreur fatale AutoPublisher</b>\n${error.message}`);
   process.exit(1);
 });
