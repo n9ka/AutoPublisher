@@ -14,6 +14,7 @@ const { upsertToWpCache } = require('./lib/supabase-data');
 const { SEO_GENERATOR_PROMPT } = require('./prompts/seo-generator');
 const { repairJson } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
+const { sendTelegram } = require('./lib/telegram');
 
 const { EXPERT_ANALYST_PROMPT } = require('./prompts/expert-analyst');
 const { EXPERT_WRITER_PROMPT } = require('./prompts/expert-writer');
@@ -240,12 +241,14 @@ async function runManualJob() {
     }
 
     console.log(`✅ Succès : ${pubResult.link}`);
+    await sendTelegram(`✅ <b>[SEO ${mode.toUpperCase()}]</b> Article publié\n• <a href="${pubResult.link}">${aiMetadata.title}</a>\n• ${site.name}`);
     process.exit(0);
 
   } catch (error) {
     console.error(`❌ Erreur : ${error.message}`);
     if (creditsSpent > 0) await refundCredit(site.user_id, creditsSpent, jobId);
     await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
+    await sendTelegram(`❌ <b>[SEO ${mode.toUpperCase()}]</b> Échec\n• ${job?.source_title || jobId}\n• ${site?.name || '?'}\n└ ${error.message}`);
     process.exit(1);
   }
 }

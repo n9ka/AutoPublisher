@@ -12,6 +12,7 @@ const { spendCredit, refundCredit } = require('./lib/credits');
 const { upsertToWpCache } = require('./lib/supabase-data');
 const { classifyArticle } = require('./lib/gemini');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
+const { sendTelegram } = require('./lib/telegram');
 const { CUSTOM_ANALYST_PROMPT } = require('./prompts/custom-analyst');
 const { CUSTOM_WRITER_PROMPT } = require('./prompts/custom-writer');
 const { repairJson } = require('./lib/json-helper');
@@ -447,12 +448,14 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     }
 
     console.log(`✅ [CUSTOM] Succès : ${pubResult.link}`);
+    await sendTelegram(`✅ <b>[SEO CUSTOM]</b> Article publié\n• <a href="${pubResult.link}">${aiOutput.metadata.title}</a>\n• ${site.name}`);
     process.exit(0);
 
   } catch (error) {
     console.error(`❌ [CUSTOM] Erreur : ${error.message}`);
     if (creditsSpent > 0) await refundCredit(site.user_id, creditsSpent, jobId);
     await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
+    await sendTelegram(`❌ <b>[SEO CUSTOM]</b> Échec\n• ${job?.source_title || jobId}\n• ${site?.name || '?'}\n└ ${error.message}`);
     process.exit(1);
   }
 }
