@@ -171,7 +171,7 @@ function updateIndex(allSites, totalSites) {
   fs.writeFileSync(INDEX_FILE, buildIndex(allSites, totalSites), 'utf8')
 }
 
-async async function syncSlug(slug) {
+async function syncSlug(slug) {
   console.log(`[catalogue-sync] Sync slug="${slug}"...`)
   let sites
   try {
