@@ -1,7 +1,6 @@
 require('dotenv').config()
 const fs = require('fs')
 const path = require('path')
-const { execSync } = require('child_process')
 
 const API_KEY = process.env.CATALOGUE_API_KEY
 const BASE_URL = process.env.CATALOGUE_BASE_URL || 'https://backlink.aspy.fr'
@@ -186,24 +185,7 @@ async function main() {
 
   updateIndexFrontmatter(totalSites)
 
-  // Git commit + push
-  try {
-    execSync(`git -C "${VAULT_PATH}" add shared/catalogue-sites/`, { stdio: 'pipe' })
-    const diff = execSync(`git -C "${VAULT_PATH}" diff --cached --stat`, { stdio: 'pipe' }).toString()
-    if (!diff.trim()) {
-      console.log('[catalogue-sync] Aucune modification — pas de commit.')
-      return
-    }
-    const now = new Date().toISOString().replace('T', ' ').substring(0, 16)
-    execSync(
-      `git -C "${VAULT_PATH}" commit -m "sync: catalogue ${now} (${totalSites} sites)"`,
-      { stdio: 'pipe' }
-    )
-    execSync(`git -C "${VAULT_PATH}" push`, { stdio: 'pipe' })
-    console.log(`[catalogue-sync] ✅ Push OK — ${totalSites} sites synchro.`)
-  } catch (err) {
-    console.error('[catalogue-sync] ⚠️ Git push échoué :', err.message)
-  }
+  console.log(`[catalogue-sync] ✅ Terminé — ${totalSites} sites générés dans ${CATALOGUE_DIR}`)
 }
 
 main().catch(err => {
