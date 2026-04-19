@@ -5,8 +5,8 @@ const API_KEYS = [
   process.env.GOOGLE_AI_API_KEY_2
 ].filter(Boolean);
 
-const GEMMA_PRIMARY = "gemma-4-31b-it";
-const GEMMA_FALLBACK = "gemma-3-27b-it"; // TODO: retirer après le 30 avril 2026
+const GEMMA_PRIMARY = "gemma-3-27b-it"; // Temporaire : quotas Gemma 4 épuisés, retour Gemma 3 jusqu'au 30/04/2026
+const GEMMA_FALLBACK = "gemma-4-31b-it";
 
 async function runWithRetry(task, maxRetries = 2) {
   let lastError;
@@ -37,17 +37,17 @@ async function runWithRetry(task, maxRetries = 2) {
 
 /**
  * Exécute une tâche Gemma avec Gemma 4 en primaire.
- * Bascule sur Gemma 3 uniquement en cas de 429 (rate limit).
+ * Bascule sur Gemma 4 uniquement en cas de 429 (rate limit).
  */
 async function runGemmaWithFallback(buildTask, label) {
-  console.log(`🤖 [GEMMA-4] ${label} — modèle: ${GEMMA_PRIMARY}`);
+  console.log(`🤖 [GEMMA-3] ${label} — modèle: ${GEMMA_PRIMARY}`);
 
   try {
     const result = await runWithRetry((genAI) => {
       const model = genAI.getGenerativeModel({ model: GEMMA_PRIMARY });
       return buildTask(model);
     });
-    console.log(`✅ [GEMMA-4] ${label} — succès`);
+    console.log(`✅ [GEMMA-3] ${label} — succès`);
     return result;
   } catch (error) {
     const isRateLimit = error.message.includes('429')
@@ -55,16 +55,16 @@ async function runGemmaWithFallback(buildTask, label) {
       || error.message.toLowerCase().includes('rate limit');
 
     if (isRateLimit) {
-      console.warn(`⚠️ [GEMMA FALLBACK] Rate limit sur Gemma 4 — bascule sur ${GEMMA_FALLBACK} pour: ${label}`);
+      console.warn(`⚠️ [GEMMA FALLBACK] Rate limit sur Gemma 3 — bascule sur ${GEMMA_FALLBACK} pour: ${label}`);
       const result = await runWithRetry((genAI) => {
         const model = genAI.getGenerativeModel({ model: GEMMA_FALLBACK });
         return buildTask(model);
       });
-      console.log(`✅ [GEMMA-3 FALLBACK] ${label} — succès`);
+      console.log(`✅ [GEMMA-4 FALLBACK] ${label} — succès`);
       return result;
     }
 
-    console.error(`❌ [GEMMA-4] ${label} — erreur non-rate-limit: ${error.message}`);
+    console.error(`❌ [GEMMA-3] ${label} — erreur non-rate-limit: ${error.message}`);
     throw error;
   }
 }
