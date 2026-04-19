@@ -126,27 +126,63 @@ function buildSiteContent(site, slug) {
 `
 }
 
-function updateIndexFrontmatter(totalSites) {
-  if (!fs.existsSync(INDEX_FILE)) return
-  let content = fs.readFileSync(INDEX_FILE, 'utf8')
-  content = content.replace(/^updated_at:.*$/m, `updated_at: "${new Date().toISOString()}"`)
-  content = content.replace(/^total_sites:.*$/m, `total_sites: ${totalSites}`)
-  fs.writeFileSync(INDEX_FILE, content, 'utf8')
+function buildIndex(allSites, totalSites) {
+  const now = new Date().toISOString()
+  const sorted = [...allSites].sort((a, b) => (b.majestic?.mj_trust_flow ?? 0) - (a.majestic?.mj_trust_flow ?? 0))
+
+  const list = sorted.map(s => {
+    const domain = (s.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
+    const tf = s.majestic?.mj_trust_flow ?? '—'
+    const themes = (s.thematiques || []).join(', ') || '—'
+    return `- ${domain} · ${s.price_with_redaction}€ · TF ${tf} · ${themes}`
+  }).join('\n')
+
+  return `---
+updated_at: "${now}"
+total_sites: ${totalSites}
+source: backlink.aspy.fr
+---
+
+# Catalogue de sites
+
+> Mis à jour automatiquement toutes les heures depuis backlink.aspy.fr.
+> Lecture seule — modifications via l'API ou le dashboard Aspy.
+
+## Sites (${totalSites})
+
+${list}
+
+---
+> Les vues Dataview ci-dessous sont réservées à Obsidian.
+
+## Vue complète
+
+\`\`\`dataview
+TABLE url AS "Site", thematiques AS "Thématiques", price_with_redaction AS "Prix €", tf AS "TF", rd AS "RD", dofollow AS "DoFollow"
+FROM "shared/catalogue-sites"
+WHERE file.name != "_index" AND file.name != "_template" AND file.name != "_exemple-sport-com"
+WHERE active = true
+SORT tf DESC
+\`\`\`
+`
 }
 
-async function syncSlug(slug) {
+function updateIndex(allSites, totalSites) {
+  fs.writeFileSync(INDEX_FILE, buildIndex(allSites, totalSites), 'utf8')
+}
+
+async async function syncSlug(slug) {
   console.log(`[catalogue-sync] Sync slug="${slug}"...`)
   let sites
   try {
     sites = await fetchSites(slug)
   } catch (err) {
     console.error(`[catalogue-sync] ⚠️ Erreur fetch ${slug} :`, err.message)
-    return 0
+    return []
   }
 
   console.log(`[catalogue-sync] ${sites.length} sites reçus pour "${slug}"`)
 
-  // Fichiers existants pour ce slug (pour détecter les supprimés)
   const existingFiles = fs.readdirSync(CATALOGUE_DIR)
     .filter(f => !f.startsWith('_') && f.endsWith('.md'))
 
@@ -159,7 +195,6 @@ async function syncSlug(slug) {
     fs.writeFileSync(filepath, buildSiteContent(site, slug), 'utf8')
   }
 
-  // Supprime les fichiers de sites qui ne sont plus dans la réponse API
   for (const existing of existingFiles) {
     if (!generatedFiles.has(existing)) {
       fs.unlinkSync(path.join(CATALOGUE_DIR, existing))
@@ -167,7 +202,7 @@ async function syncSlug(slug) {
     }
   }
 
-  return sites.length
+  return sites
 }
 
 async function main() {
@@ -178,14 +213,15 @@ async function main() {
     console.log(`[catalogue-sync] Répertoire créé : ${CATALOGUE_DIR}`)
   }
 
-  let totalSites = 0
+  const allSites = []
   for (const slug of SLUGS) {
-    totalSites += await syncSlug(slug)
+    const sites = await syncSlug(slug)
+    allSites.push(...sites)
   }
 
-  updateIndexFrontmatter(totalSites)
+  updateIndex(allSites, allSites.length)
 
-  console.log(`[catalogue-sync] ✅ Terminé — ${totalSites} sites générés dans ${CATALOGUE_DIR}`)
+  console.log(`[catalogue-sync] ✅ Terminé — ${allSites.length} sites générés dans ${CATALOGUE_DIR}`)
 }
 
 main().catch(err => {
