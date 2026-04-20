@@ -1,8 +1,9 @@
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { fetchRSS } = require('./lib/rss');
-const { getEmbedding, filterBestArticlesBatch } = require('./lib/gemini');
+const { getEmbedding, filterBestArticlesBatch, getStats, resetStats } = require('./lib/gemini');
 const { hasEnoughCredits } = require('./lib/credits');
+const { sendTelegram } = require('./lib/telegram');
 
 // Configuration
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -50,7 +51,7 @@ async function checkAutoSeo(site) {
   if (site.last_auto_seo_at) {
     const lastRun = new Date(site.last_auto_seo_at);
     const diffHours = (new Date() - lastRun) / (60 * 60 * 1000);
-    
+
     if (diffHours < intervalHours) {
       console.log(`  ⏳ AutoPilot : Trop tôt (Dernier run il y a ${diffHours.toFixed(1)}h, intervalle: ${intervalHours.toFixed(1)}h).`);
       return false;
@@ -75,7 +76,6 @@ async function checkAutoSeo(site) {
   }
 
   // 5. Vérifier les crédits selon le mode (Express: 3, Expert: 5, Custom: variable)
-  // On utilise le mode défini dans le backlog, ou celui par défaut du site
   const mode = backlogItem.generation_mode || site.auto_seo_mode || 'express';
   let cost;
   if (mode === 'custom') {
@@ -86,12 +86,11 @@ async function checkAutoSeo(site) {
     }
     const briefCredits = opts?.brief_credits || 2;
     const writingCredits = opts?.writing_credits || 4;
-    cost = 1 + briefCredits + writingCredits; // research(1) + brief + writing
+    cost = 1 + briefCredits + writingCredits;
   } else {
     cost = mode === 'expert' ? 5 : 3;
   }
-  // Note : le mode 'manual' est exclu de la requête ci-dessus, ne doit jamais arriver ici
-  
+
   const canAfford = await hasEnoughCredits(site.user_id, cost);
   if (!canAfford) {
     console.log(`  ❌ AutoPilot : Crédits insuffisants pour le mode ${mode} (${cost} requis).`);
@@ -106,7 +105,7 @@ async function checkAutoSeo(site) {
     .insert({
       wordpress_site_id: site.id,
       source_title: backlogItem.keyword,
-      source_type: 'manual', 
+      source_type: 'manual',
       generation_mode: mode,
       target_length: backlogItem.target_length || site.auto_seo_target_length || 'medium',
       infographic_model: backlogItem.infographic_model || site.auto_seo_infographic_style || 'banana',
@@ -169,6 +168,10 @@ async function checkAutoSeo(site) {
 async function detect() {
   console.log('🔍 Démarrage de la détection (Mode Batch)...');
 
+  // Reset stats IA pour ce run
+  resetStats();
+  const addedArticles = []; // { site: string, title: string }
+
   const { data: sites, error: siteError } = await supabase
     .from('wordpress_sites')
     .select('*')
@@ -179,19 +182,19 @@ async function detect() {
   for (const site of sites) {
     console.log(`\n--- Site : ${site.name} ---`);
 
-    // --- NOUVEAU : Check AutoPilot SEO ---
+    // --- Check AutoPilot SEO ---
     await checkAutoSeo(site);
 
     // 1. Check Intervalle RSS (Métronome Hebdomadaire)
     const siteMaxWeekly = site.max_articles_per_week || 7;
-    const intervalHours = (7 * 24) / siteMaxWeekly; 
-    
+    const intervalHours = (7 * 24) / siteMaxWeekly;
+
     console.log(`ℹ️  Quota RSS : ${siteMaxWeekly} art/semaine (Intervalle cible: ${intervalHours.toFixed(1)}h)`);
 
     if (site.last_rss_detection_at) {
       const lastDetection = new Date(site.last_rss_detection_at);
       const diffHours = (new Date() - lastDetection) / (60 * 60 * 1000);
-      
+
       if (diffHours < intervalHours) {
         console.log(`⏳ Trop tôt pour le RSS (Dernier ajout il y a ${diffHours.toFixed(1)}h). Skip.`);
         continue;
@@ -283,13 +286,70 @@ async function detect() {
 
         if (!error) {
           console.log(`    -> 📥 Ajouté : ${article.title}`);
+          addedArticles.push({ site: site.name, title: article.title });
           await supabase.from('wordpress_sites').update({ last_rss_detection_at: new Date().toISOString() }).eq('id', site.id);
           addedCount++;
         }
       }
     }
   }
+
   console.log('\n🏁 Fin détection.');
+
+  // ── Notification Telegram ─────────────────────────────────────────────────
+  await sendDetectionReport(addedArticles);
+}
+
+async function sendDetectionReport(addedArticles) {
+  const stats = getStats();
+
+  // Ne rien envoyer si aucun appel IA et aucun article (run vide/silencieux)
+  if (stats.calls === 0 && addedArticles.length === 0) return;
+
+  const lines = [];
+  lines.push('🔍 <b>Détection RSS — bilan</b>');
+  lines.push('');
+
+  // Articles placés en pending
+  if (addedArticles.length > 0) {
+    lines.push(`📥 <b>${addedArticles.length} article(s) ajouté(s) en pending</b>`);
+    for (const a of addedArticles) {
+      lines.push(`  • [${a.site}] ${a.title}`);
+    }
+  } else {
+    lines.push('📭 Aucun article ajouté en pending.');
+  }
+
+  // Stats IA
+  lines.push('');
+  lines.push('🤖 <b>Appels IA</b>');
+
+  if (stats.calls === 0) {
+    lines.push('  • Aucun appel effectué.');
+  } else {
+    const providers = [];
+    if (stats.gemma > 0)    providers.push(`Gemma: ${stats.gemma}`);
+    if (stats.cerebras > 0) providers.push(`Cerebras: ${stats.cerebras}`);
+    if (stats.mistral > 0)  providers.push(`Mistral: ${stats.mistral}`);
+    lines.push(`  • ${stats.calls} appel(s) — ${providers.join(', ') || 'aucun succès'}`);
+
+    if (stats.errors > 0) {
+      lines.push(`  ❌ ${stats.errors} appel(s) échoué(s) sur tous les providers`);
+    }
+  }
+
+  // Fallbacks déclenchés
+  if (stats.fallbacks.length > 0) {
+    lines.push('');
+    lines.push(`⚠️ <b>${stats.fallbacks.length} fallback(s) déclenchés</b>`);
+    for (const f of stats.fallbacks) {
+      const label = f.label.length > 50 ? f.label.substring(0, 50) + '…' : f.label;
+      lines.push(`  • [${f.from}] ${label}`);
+      lines.push(`    <i>${f.reason}</i>`);
+    }
+  }
+
+  await sendTelegram(lines.join('\n'));
 }
 
 detect().catch(console.error);
