@@ -142,21 +142,7 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
   const { maxTokens = 64, temperature = 0.1 } = options;
   _stats.calls++;
 
-  // 1. Gemma
-  try {
-    const text = await runGemmaWithFallback(async (model) => {
-      const r = await model.generateContent(prompt);
-      return r.response.text().trim();
-    }, label);
-    _stats.gemma++;
-    return parseResponse(text);
-  } catch (gemmaErr) {
-    const reason = gemmaErr.message.substring(0, 120);
-    _stats.fallbacks.push({ label, from: 'gemma', reason });
-    console.warn(`⚠️ [MULTI-FALLBACK] Gemma échoué pour "${label}" → Cerebras | ${reason}`);
-  }
-
-  // 2. Cerebras
+  // 1. Cerebras
   try {
     const text = await callCerebras(prompt, maxTokens, temperature);
     _stats.cerebras++;
@@ -168,17 +154,31 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
     console.warn(`⚠️ [MULTI-FALLBACK] Cerebras échoué pour "${label}" → Mistral | ${reason}`);
   }
 
-  // 3. Mistral
+  // 2. Mistral
   try {
     const text = await callMistral(prompt, maxTokens, temperature);
     _stats.mistral++;
     console.log(`✅ [MISTRAL] ${label} — succès`);
     return parseResponse(text);
   } catch (mistralErr) {
+    const reason = mistralErr.message.substring(0, 120);
+    _stats.fallbacks.push({ label, from: 'mistral', reason });
+    console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Gemma | ${reason}`);
+  }
+
+  // 3. Gemma
+  try {
+    const text = await runGemmaWithFallback(async (model) => {
+      const r = await model.generateContent(prompt);
+      return r.response.text().trim();
+    }, label);
+    _stats.gemma++;
+    return parseResponse(text);
+  } catch (gemmaErr) {
     _stats.errors++;
-    _stats.fallbacks.push({ label, from: 'mistral', reason: mistralErr.message.substring(0, 120) });
+    _stats.fallbacks.push({ label, from: 'gemma', reason: gemmaErr.message.substring(0, 120) });
     console.error(`❌ [TOUS PROVIDERS ÉCHOUÉS] ${label}`);
-    throw mistralErr;
+    throw gemmaErr;
   }
 }
 
