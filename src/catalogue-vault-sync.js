@@ -77,6 +77,7 @@ function buildFrontmatter(site, slug) {
     `has_gmb: ${site.has_gmb}`,
     ``,
     `# Meta`,
+    `note_interne: ${site.note_interne ? `"${String(site.note_interne).replace(/"/g, '\\"')}"` : 'null'}`,
     `updated_at: "${new Date().toISOString()}"`,
     `source: backlink.aspy.fr`,
     '---',
@@ -123,7 +124,7 @@ function buildSiteContent(site, slug) {
 - Affichage homepage : ${site.affichage_homepage ? 'oui' : 'non'}
 - Google Discover : ${site.has_discover ? '✅' : 'non'}
 - Google My Business : ${site.has_gmb ? '✅' : 'non'}
-`
+${site.note_interne ? `\n## Note interne\n\n${site.note_interne}\n` : ''}`
 }
 
 function buildIndex(allSites, totalSites) {
