@@ -1,9 +1,10 @@
 // manual-generator.js - Version 2.2 (Expert vs Express - Anti-Bug)
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
-const { searchBrave } = require('./lib/research'); 
+const { searchBrave } = require('./lib/research');
 const { researchWithPerplexity } = require('./lib/perplexity');
 const { researchWithTavily } = require('./lib/tavily');
+const { buildLanguageBlock, INFOGRAPHIC_LABEL } = require('./lib/languages');
 const { generateContent: generateDeepSeek } = require('./lib/deepseek');
 const { classifyArticle } = require('./lib/gemini');
 const { generateRunwareImage } = require('./lib/runware');
@@ -55,10 +56,8 @@ async function runManualJob() {
 
   const currentDate = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
-  const outputLanguage = job.custom_options?.output_language || 'fr';
-  const languageNames = { fr: 'français', en: 'anglais', es: 'espagnol', de: 'allemand', it: 'italien', pt: 'portugais' };
-  const languageName = languageNames[outputLanguage] || outputLanguage;
-  const languageBlock = `# LANGUE — RÈGLE ABSOLUE\nTu dois rédiger EXCLUSIVEMENT en ${languageName}.\nAucun mot, caractère ou expression dans une autre langue n'est autorisé, quelle que soit la langue du modèle sous-jacent ou des données sources.\nSi les données sources contiennent du contenu dans une autre langue, traduis-le en ${languageName}.\nToute sortie contenant des caractères non-latins (chinois, japonais, arabe, cyrillique, etc.) est une erreur critique.`;
+  const outputLanguage = job.custom_options?.output_language || site.default_language || 'fr';
+  const languageBlock = buildLanguageBlock(outputLanguage);
 
   try {
     let finalHtml = "";
@@ -71,7 +70,7 @@ async function runManualJob() {
       console.log('  💳 5 crédits débités (EXPERT).');
 
       console.log('🔍 [EXPERT] Phase 1: Recherche Multi-Sources...');
-      const bravePromise = searchBrave(job.source_title);
+      const bravePromise = searchBrave(job.source_title, false, outputLanguage);
       let expertResearch = await researchWithTavily(job.source_title);
       if (!expertResearch) expertResearch = await researchWithPerplexity(job.source_title);
       const braveData = await bravePromise;
@@ -191,7 +190,7 @@ async function runManualJob() {
     const featuredMedia = await uploadImageToWordPress(site.url, site.wp_user, wpPassword, featuredImageUrl, aiMetadata.title, site.connection_mode, site.bridge_key);
 
     const isBridgeMode = site.connection_mode === 'bridge_plugin';
-    const infographicAlt = `Infographie : ${job.source_title}`;
+    const infographicAlt = `${INFOGRAPHIC_LABEL[outputLanguage] || 'Infographic'} : ${job.source_title}`;
 
     if (infographicUrl) {
       let infoImgSrc = null;

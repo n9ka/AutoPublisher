@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { LANG_TO_PEXELS_LOCALE } = require('./languages');
 
 if (!process.env.PEXELS_API_KEY) {
   console.warn('PEXELS_API_KEY is missing.');
@@ -7,15 +8,15 @@ if (!process.env.PEXELS_API_KEY) {
 /**
  * Cherche une image sur Pexels via un mot-clé
  */
-async function searchImage(query) {
+async function searchImage(query, langCode = 'fr') {
   try {
     const response = await axios.get(`https://api.pexels.com/v1/search`, {
       headers: { Authorization: process.env.PEXELS_API_KEY },
       params: {
         query: query,
         per_page: 1,
-        orientation: 'landscape', // Format article classique
-        locale: 'fr-FR' // Essayer de matcher des résultats pertinents localement si possible
+        orientation: 'landscape',
+        locale: LANG_TO_PEXELS_LOCALE[langCode] || 'fr-FR',
       }
     });
 

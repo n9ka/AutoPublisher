@@ -4,6 +4,7 @@ require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { searchBrave } = require('./lib/research');
 const { researchWithTavily } = require('./lib/tavily');
+const { buildLanguageBlock, INFOGRAPHIC_LABEL } = require('./lib/languages');
 const { generateWithLLM } = require('./lib/llm-client');
 const { generateRunwareImage } = require('./lib/runware');
 const { uploadImageToWordPress, publishPost, getCategories } = require('./lib/wordpress');
@@ -138,10 +139,13 @@ async function runCustomJob() {
     creditsSpent = totalCredits;
     console.log(`  💳 ${totalCredits} crédits débités (CUSTOM).`);
 
+    const outputLanguage = opts.output_language || site.default_language || 'fr';
+    const languageBlock = buildLanguageBlock(outputLanguage);
+
     // ── PHASE 0 : Recherche parallèle ──────────────────────────────────────
     console.log('🔍 [CUSTOM] Phase 0: Recherche parallèle...');
     const [braveResults, tavilyResults] = await Promise.all([
-      searchBrave(keyword, false),
+      searchBrave(keyword, false, outputLanguage),
       researchWithTavily(keyword),
     ]);
 
@@ -152,21 +156,16 @@ async function runCustomJob() {
     const sectionImgCount = opts.section_images === -1 ? 6 : (opts.section_images || 0);
 
     const infographicBriefBlock = opts.infographic
-      ? `## Brief Infographie\nDécris dans "infographic_prompt" une scène conceptuelle forte illustrant le sujet principal. Style illustration 2D flat-vector, textes en FRANÇAIS limités à 1 titre + 3-5 mots-clés.`
+      ? `## Brief Infographie\nDécris dans "infographic_prompt" une scène conceptuelle forte illustrant le sujet principal. Style illustration 2D flat-vector, textes EN ANGLAIS limités à 1 titre + 3-5 mots-clés.`
       : '';
 
     const sectionImagesBlock = sectionImgCount > 0
-      ? `## Prompts Images de Section\nGénère ${sectionImgCount} entrées dans "section_image_prompts" (prompts EN ANGLAIS pour Runware : photographie professionnelle, textless, no text, no words, no letters, sujet unique) ET ${sectionImgCount} entrées dans "section_image_alts" (textes alternatifs EN FRANÇAIS, 60-80 caractères, intègrent le mot-clé de la section correspondante, descriptifs et naturels).`
+      ? `## Prompts Images de Section\nGénère ${sectionImgCount} entrées dans "section_image_prompts" (prompts EN ANGLAIS pour Runware : photographie professionnelle, textless, no text, no words, no letters, sujet unique) ET ${sectionImgCount} entrées dans "section_image_alts" (alt texts in ${outputLanguage === 'fr' ? 'FRENCH' : outputLanguage === 'en' ? 'ENGLISH' : outputLanguage === 'es' ? 'SPANISH' : outputLanguage === 'de' ? 'GERMAN' : outputLanguage === 'it' ? 'ITALIAN' : outputLanguage === 'pt' ? 'PORTUGUESE' : 'the article language'}, 60-80 characters, include the section keyword, descriptive and natural).`
       : '';
 
     const researchInstructionsBlock = opts.research_instructions
       ? `## Instructions Recherche Personnalisées\n${opts.research_instructions}`
       : '';
-
-    const outputLanguage = opts.output_language || 'fr';
-    const languageNames = { fr: 'français', en: 'anglais', es: 'espagnol', de: 'allemand', it: 'italien', pt: 'portugais' };
-    const languageName = languageNames[outputLanguage] || outputLanguage;
-    const languageBlock = `# LANGUE — RÈGLE ABSOLUE\nTu dois rédiger EXCLUSIVEMENT en ${languageName}.\nAucun mot, caractère ou expression dans une autre langue n'est autorisé, quelle que soit la langue du modèle sous-jacent ou des données sources.\nSi les données sources contiennent du contenu dans une autre langue, traduis-le en ${languageName}.\nToute sortie contenant des caractères non-latins (chinois, japonais, arabe, cyrillique, etc.) est une erreur critique.`;
 
     const analystPrompt = CUSTOM_ANALYST_PROMPT
       .replace('{{keyword}}', keyword)
@@ -376,7 +375,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls, sectionImageAltTexts);
     }
 
-    const infographicAlt = `Infographie : ${keyword}`;
+    const infographicAlt = `${INFOGRAPHIC_LABEL[outputLanguage] || 'Infographic'} : ${keyword}`;
 
     // Injection de l'infographie au milieu de l'article
     // Split sur le commentaire Gutenberg complet pour ne pas casser la structure des blocs

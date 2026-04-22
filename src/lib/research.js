@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { LANG_TO_BRAVE } = require('./languages');
 
 function formatContext(results) {
   return results.map((res, i) => {
@@ -53,7 +54,7 @@ async function searchWithLangSearch(query) {
   }
 }
 
-async function searchBrave(query, raw = false) {
+async function searchBrave(query, raw = false, langCode = 'fr') {
   const braveKey = process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY;
   if (!braveKey) {
     console.warn('  ⚠️ BRAVE_API_KEY manquante.');
@@ -63,10 +64,13 @@ async function searchBrave(query, raw = false) {
   try {
     console.log(`  🌐 Recherche Brave Search pour : "${query}"...`);
 
+    const geo = LANG_TO_BRAVE[langCode] || LANG_TO_BRAVE.fr;
     const response = await axios.get('https://api.search.brave.com/res/v1/web/search', {
       params: {
         q: query,
-        count: 5
+        count: 5,
+        country: geo.country,
+        search_lang: geo.search_lang,
       },
       headers: {
         'Accept': 'application/json',
@@ -104,10 +108,10 @@ async function searchBrave(query, raw = false) {
  * Effectue une recherche web via LangSearch pour enrichir un sujet
  * @param {string} query - Le sujet ou la tendance à rechercher
  */
-async function researchTopic(query) {
+async function researchTopic(query, langCode = 'fr') {
   const langsearchContext = await searchWithLangSearch(query);
   if (langsearchContext) return langsearchContext;
-  return await searchBrave(query);
+  return await searchBrave(query, false, langCode);
 }
 
 module.exports = { researchTopic, searchBrave };

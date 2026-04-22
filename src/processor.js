@@ -11,6 +11,7 @@ const { spendCredit, refundCredit } = require('./lib/credits');
 const { upsertToWpCache } = require('./lib/supabase-data');
 const { MAIN_PROMPT } = require('./prompts/templates');
 const { TREND_SPY_PROMPT } = require('./prompts/trend-spy');
+const { buildLanguageBlock } = require('./lib/languages');
 const { repairJson } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
@@ -98,11 +99,14 @@ async function processNextArticle() {
     // 3. Génération IA (DeepSeek)
     const promptTemplate = isTrend ? TREND_SPY_PROMPT : MAIN_PROMPT;
     console.log(`  🧠 Génération IA [${isTrend ? 'TREND SPY' : (isFallback ? 'FALLBACK' : 'CLASSIC')}]...`);
-    
+
     const persona = site.persona || {};
     const currentDate = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-    
+    const langCode = site.default_language || 'fr';
+    const languageBlock = buildLanguageBlock(langCode);
+
     let filledPrompt = promptTemplate
+      .replace('{{language_block}}', languageBlock)
       .replace('{{persona_nom}}', persona.name || 'Expert')
       .replace('{{persona_background}}', persona.background || '')
       .replace('{{persona_ton}}', persona.tone || 'Professionnel')
@@ -144,7 +148,7 @@ async function processNextArticle() {
     }
 
     if (!imageUrl && process.env.PEXELS_API_KEY) {
-      const pexelsRes = await searchImage(wpData.image_search_query || wpData.keywords.split(',')[0]);
+      const pexelsRes = await searchImage(wpData.image_search_query || wpData.keywords.split(',')[0], langCode);
       imageUrl = pexelsRes ? pexelsRes.url : null;
     }
 
