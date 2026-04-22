@@ -100,6 +100,7 @@ LA DATE ACTUELLE EST : **{{current_date}}**. Interdiction d'écrire "2024" ou "2
     "title": "h1_recommended du brief (60-65 chars max)",
     "excerpt": "Méta-description (150-160 caractères)",
     "slug": "slug-kebab-case-minuscules",
+    "keywords": "mot-clé1, mot-clé2, mot-clé3",
     "image_generation_prompt": "English prompt, photorealistic, textless, no text, no words, no letters, professional photography, single subject"
   },
   "faq": [

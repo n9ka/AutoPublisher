@@ -415,6 +415,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       content: finalHtml,
       excerpt: aiOutput.metadata.excerpt,
       slug: aiOutput.metadata.slug,
+      keywords: aiOutput.metadata.keywords,
       status: job.custom_status || site.default_status || 'draft',
       categories: [categoryId],
       featured_media_id: featuredMedia?.id,
