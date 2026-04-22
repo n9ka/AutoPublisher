@@ -40,11 +40,14 @@ async function uploadImageToWordPress(wpUrl, wpUser, wpPassword, imageUrl, altTe
   if (!wpUrl || !imageUrl) return null;
   const baseUrl = wpUrl.replace(/\/$/, '');
 
-  // Mode Bridge : laisser le plugin gérer l'image côté WordPress
-  if (connectionMode === 'bridge_plugin' || connectionMode === 'bridge_deferred') {
-    console.log('  🛡️  Image : Mode Bridge, transfert différé au plugin...');
+  // bridge_deferred : déléguer directement au plugin sans tenter REST
+  if (connectionMode === 'bridge_deferred') {
+    console.log('  🛡️  Image : Bridge différé, transfert au plugin...');
     return { id: null, url: imageUrl, is_bridge: true };
   }
+
+  const isBridgeMode = connectionMode === 'bridge_plugin';
+  if (isBridgeMode) console.log('  🖼️  Image : tentative REST avant Bridge...');
 
   try {
     const imageResponse = await axios.get(imageUrl, {
@@ -76,13 +79,18 @@ async function uploadImageToWordPress(wpUrl, wpUser, wpPassword, imageUrl, altTe
       });
     }
 
+    if (isBridgeMode) console.log('  ✅  Image uploadée via REST (mode Bridge)');
     return { id: mediaId, url: localUrl };
 
   } catch (error) {
     const status = error.response ? error.response.status : 0;
     console.error(`Erreur upload image WP: HTTP ${status}`);
-    // Sur erreur d'auth/WAF, retourner bridge_deferred si le Bridge est configuré
-    // → publishPost pourra utiliser l'URL externe lors du fallback Bridge
+    // Mode Bridge : déléguer le sideload au plugin
+    if (isBridgeMode) {
+      console.log('  🛡️  REST bloqué pour l\'image, délégation au Bridge...');
+      return { id: null, url: imageUrl, is_bridge: true };
+    }
+    // Mode REST standard : fallback Bridge sur erreur WAF
     if ([401, 403, 453].includes(status) && bridgeKey) {
       console.log('  ⚡ Upload bloqué, image différée au Bridge...');
       return { id: null, url: imageUrl, is_bridge: true };
@@ -117,7 +125,11 @@ async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
     payload.bridge_key = bridge_key;
     payload.title_base64 = Buffer.from(postData.title).toString('base64');
     payload.content_base64 = Buffer.from(postData.content).toString('base64');
-    if (postData.featured_media_url) payload.featured_image_url = postData.featured_media_url;
+    // Si REST a réussi (media_id présent), le plugin utilise l'ID directement.
+    // Sinon on envoie l'URL externe pour que le plugin la sideload.
+    if (!postData.featured_media_id && postData.featured_media_url) {
+      payload.featured_image_url = postData.featured_media_url;
+    }
     if (postData.infographic_url) {
       payload.infographic_image_url = postData.infographic_url;
       payload.infographic_alt_text = postData.infographic_alt || 'Infographie';
