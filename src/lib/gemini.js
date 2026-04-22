@@ -222,6 +222,7 @@ async function classifyArticle(title, excerpt, categories) {
   TITRE: "${title}"
   RESUME: "${excerpt}"
   CATEGORIES DISPONIBLES: ${JSON.stringify(categoriesWithHierarchy)}
+  RÈGLE : préfère toujours une catégorie thématique précise. N'utilise une catégorie générique (Actualités, Divers, Général, News, Autres...) qu'en dernier recours si aucune catégorie spécifique ne convient.
   Réponds UNIQUEMENT avec l'ID numérique choisi.
   `;
 
