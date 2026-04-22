@@ -190,7 +190,25 @@ async function publishPost(siteConfig, postData) {
   const canFallbackToRest = primaryIsBridge && !!(siteConfig.wp_user && siteConfig.wp_password);
 
   try {
-    return await _doPublish(baseUrl, siteConfig, postData, primaryIsBridge);
+    const result = await _doPublish(baseUrl, siteConfig, postData, primaryIsBridge);
+
+    // En mode Bridge, si l'image a été uploadée via REST (media_id disponible),
+    // définir l'image à la une via REST après création du post — compatible avec
+    // toutes les versions du plugin Bridge sans mise à jour requise.
+    if (primaryIsBridge && postData.featured_media_id && result.id) {
+      try {
+        const auth = Buffer.from(`${siteConfig.wp_user}:${siteConfig.wp_password}`).toString('base64');
+        await axios.post(`${baseUrl}/wp-json/wp/v2/posts/${result.id}`,
+          { featured_media: postData.featured_media_id },
+          { timeout: 10000, headers: getHeaders(baseUrl, auth) }
+        );
+        console.log('  🖼️  Image à la une définie via REST (mode Bridge)');
+      } catch {
+        console.warn('  ⚠️  Impossible de définir l\'image à la une via REST après Bridge (non bloquant)');
+      }
+    }
+
+    return result;
   } catch (primaryError) {
     const status = primaryError._httpStatus || 0;
 
