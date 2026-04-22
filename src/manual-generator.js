@@ -214,6 +214,7 @@ async function runManualJob() {
     console.log('📤 Publication...');
     const pubResult = await publishPost({ ...site, wp_password: wpPassword }, {
       title: aiMetadata.title, content: finalHtml, excerpt: aiMetadata.excerpt, slug: aiMetadata.slug,
+      keywords: aiMetadata.keywords,
       status: job.custom_status || site.default_status || 'draft', categories: [categoryId],
       featured_media_id: featuredMedia?.id, featured_media_url: featuredMedia?.url || featuredImageUrl,
       date: job.scheduled_at || null,
