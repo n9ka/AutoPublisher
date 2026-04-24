@@ -20,6 +20,7 @@
     "cheerio": "^1.2.0",
     "dotenv": "^17.2.3",
     "google-trends-api": "^4.9.2",
+    "jsonrepair": "^3.14.0",
     "openai": "^6.17.0",
     "pg": "^8.18.0",
     "rss-parser": "^3.13.0",

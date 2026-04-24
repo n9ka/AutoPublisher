@@ -31,6 +31,11 @@ async function generateContent(prompt, model = 'deepseek-chat', retries = 3) {
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
+    // Cache-busting : DeepSeek met en cache les requêtes identiques, le retry rejouerait la même erreur
+    if (attempt > 1) {
+      params.messages = [...params.messages];
+      params.messages[0] = { ...params.messages[0], content: params.messages[0].content.replace(/ \[retry-\d+\]$/, '') + ` [retry-${Date.now()}]` };
+    }
     try {
       const response = await deepseek.chat.completions.create(params);
       return response.choices[0].message.content;

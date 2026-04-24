@@ -2,6 +2,7 @@
  * json-helper.js - Fonctions de secours pour le parsing JSON des LLM
  * Version SÉCURISÉE ET AMÉLIORÉE avec détection de troncature
  */
+const { jsonrepair } = require('jsonrepair');
 
 function repairJson(text) {
   if (!text) return { json: "{}", isTruncated: false };
@@ -90,6 +91,18 @@ function repairJson(text) {
 
   // 5. Nettoyage des virgules traînantes internes
   result = result.replace(/,\s*([}\]])/g, '$1');
+
+  // 6. Si le résultat est toujours invalide (guillemets non échappés dans HTML, etc.),
+  //    on tente jsonrepair qui gère ces cas que le parser maison ne couvre pas
+  try {
+    JSON.parse(result);
+  } catch {
+    try {
+      result = jsonrepair(cleaned);
+    } catch {
+      // jsonrepair a aussi échoué — on garde le résultat du parser maison
+    }
+  }
 
   return {
     json: result,
