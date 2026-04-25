@@ -354,19 +354,26 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       }
     }
 
-    // Upload et injection des images de section (séquentiel — uploads parallèles déclenchent le WAF)
-    const sectionImageReplaceMap = []; // URLs à sideloader par le bridge si REST échoue
+    // Upload et injection des images de section
+    // Séquentiel + fail-fast : au premier blocage WAF (is_bridge), on arrête d'uploader
+    // et on délègue tout au bridge — évite de déclencher un bloc IP qui bloquerait le bridge lui-même
+    const sectionImageReplaceMap = [];
+    let wafBlocked = false; // dès qu'un upload est bloqué, on skip les suivants
     if (sectionImageUrls.length > 0) {
       const uploadedSectionUrls = [];
       for (let idx = 0; idx < sectionImageUrls.length; idx++) {
         const url = sectionImageUrls[idx];
         if (!url) { uploadedSectionUrls.push(null); continue; }
-        const media = await uploadImageToWordPress(
-          site.url, site.wp_user, wpPassword,
-          url, sectionImageAltTexts[idx] || `${keyword} — image ${idx + 1}`,
-          site.connection_mode, site.bridge_key
-        );
-        if (media?.is_bridge || !media?.url) {
+        let media = null;
+        if (!wafBlocked) {
+          media = await uploadImageToWordPress(
+            site.url, site.wp_user, wpPassword,
+            url, sectionImageAltTexts[idx] || `${keyword} — image ${idx + 1}`,
+            site.connection_mode, site.bridge_key
+          );
+          if (media?.is_bridge) wafBlocked = true;
+        }
+        if (!media?.url || media?.is_bridge) {
           sectionImageReplaceMap.push({ url, alt: sectionImageAltTexts[idx] || '' });
           uploadedSectionUrls.push(url);
         } else {
@@ -379,14 +386,14 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     const infographicAlt = `${INFOGRAPHIC_LABEL[outputLanguage] || 'Infographic'} : ${keyword}`;
 
     // Injection de l'infographie au milieu de l'article
-    // Split sur le commentaire Gutenberg complet pour ne pas casser la structure des blocs
     if (infographicUrl) {
       let infoImgSrc = null;
-      if (isBridgeMode) {
-        infoImgSrc = infographicUrl;
+      if (isBridgeMode || wafBlocked) {
+        infoImgSrc = infographicUrl; // bridge gère le sideload
       } else {
         const infoMedia = await uploadImageToWordPress(site.url, site.wp_user, wpPassword, infographicUrl, infographicAlt, 'rest_api', site.bridge_key);
-        if (infoMedia?.url) infoImgSrc = infoMedia.url;
+        if (infoMedia?.url && !infoMedia?.is_bridge) infoImgSrc = infoMedia.url;
+        else { infoImgSrc = infographicUrl; wafBlocked = true; }
       }
 
       if (infoImgSrc) {
@@ -405,7 +412,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     const categories = await getCategories({ ...site, wp_password: wpPassword });
     const categoryId = await classifyArticle(aiOutput.metadata.title, aiOutput.metadata.excerpt, categories);
 
-    const featuredMedia = await uploadImageToWordPress(
+    const featuredMedia = wafBlocked ? null : await uploadImageToWordPress(
       site.url, site.wp_user, wpPassword,
       featuredImageUrl, aiOutput.metadata.title,
       site.connection_mode, site.bridge_key
