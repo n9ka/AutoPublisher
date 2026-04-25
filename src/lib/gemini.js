@@ -205,10 +205,17 @@ async function getEmbedding(text) {
 
 // ── Classify article ─────────────────────────────────────────────────────────
 
+const GENERIC_CAT_RE = /actualit|divers|g[eé]n[eé]ral|news|autres|uncategor|non.?class/i;
+
 async function classifyArticle(title, excerpt, categories) {
   if (!categories || categories.length === 0) return 1;
 
-  const categoriesWithHierarchy = categories.map(cat => {
+  const specificCats = categories.filter(c => c.id !== 1 && !GENERIC_CAT_RE.test(c.name));
+  const fallbackCat  = categories.find(c => GENERIC_CAT_RE.test(c.name)) ?? categories[0];
+
+  if (specificCats.length === 0) return fallbackCat.id;
+
+  const categoriesWithHierarchy = specificCats.map(cat => {
     let fullName = cat.name;
     if (cat.parent && cat.parent !== 0) {
       const parent = categories.find(c => c.id === cat.parent);
@@ -222,20 +229,20 @@ async function classifyArticle(title, excerpt, categories) {
   TITRE: "${title}"
   RESUME: "${excerpt}"
   CATEGORIES DISPONIBLES: ${JSON.stringify(categoriesWithHierarchy)}
-  RÈGLE : préfère toujours une catégorie thématique précise. N'utilise une catégorie générique (Actualités, Divers, Général, News, Autres...) qu'en dernier recours si aucune catégorie spécifique ne convient.
   Réponds UNIQUEMENT avec l'ID numérique choisi.
   `;
 
   const label = `classifyArticle("${title.substring(0, 60)}")`;
+  const validIds = new Set(specificCats.map(c => c.id));
 
   try {
     return await runWithMultiProviderFallback(prompt, (text) => {
       const id = parseInt(text.match(/\d+/)?.[0]);
-      return isNaN(id) ? categories[0]?.id : id;
+      return (id && validIds.has(id)) ? id : fallbackCat.id;
     }, label, { maxTokens: 16 });
   } catch (error) {
     console.error('❌ Échec définitif classification:', error.message);
-    return categories[0]?.id;
+    return fallbackCat.id;
   }
 }
 
