@@ -151,7 +151,9 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
   } catch (cerebrasErr) {
     const reason = cerebrasErr.message.substring(0, 120);
     _stats.fallbacks.push({ label, from: 'cerebras', reason });
-    console.warn(`⚠️ [MULTI-FALLBACK] Cerebras échoué pour "${label}" → Mistral | ${reason}`);
+    if (!reason.includes('non définie') && !reason.includes('non installé')) {
+      console.warn(`⚠️ [MULTI-FALLBACK] Cerebras échoué pour "${label}" → Mistral | ${reason}`);
+    }
   }
 
   // 2. Mistral
@@ -163,7 +165,9 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
   } catch (mistralErr) {
     const reason = mistralErr.message.substring(0, 120);
     _stats.fallbacks.push({ label, from: 'mistral', reason });
-    console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Gemma | ${reason}`);
+    if (!reason.includes('non définie') && !reason.includes('non installé')) {
+      console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Gemma | ${reason}`);
+    }
   }
 
   // 3. Gemma
