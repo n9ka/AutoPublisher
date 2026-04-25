@@ -238,12 +238,10 @@ async function classifyArticle(title, excerpt, categories) {
   const validIds = new Set(categories.map(c => c.id));
 
   try {
-    const text = await runGemmaWithFallback(async (model) => {
-      const r = await model.generateContent(prompt);
-      return r.response.text().trim();
-    }, label);
-    const id = parseInt(text.match(/\d+/)?.[0]);
-    return (id && validIds.has(id)) ? id : fallbackCat.id;
+    return await runWithMultiProviderFallback(prompt, (text) => {
+      const id = parseInt(text.match(/\d+/)?.[0]);
+      return (id && validIds.has(id)) ? id : fallbackCat.id;
+    }, label, { maxTokens: 16 });
   } catch (error) {
     console.error('❌ Échec définitif classification:', error.message);
     return fallbackCat.id;
