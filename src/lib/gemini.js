@@ -151,9 +151,7 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
   } catch (cerebrasErr) {
     const reason = cerebrasErr.message.substring(0, 120);
     _stats.fallbacks.push({ label, from: 'cerebras', reason });
-    if (!reason.includes('non définie') && !reason.includes('non installé')) {
-      console.warn(`⚠️ [MULTI-FALLBACK] Cerebras échoué pour "${label}" → Mistral | ${reason}`);
-    }
+    console.warn(`⚠️ [MULTI-FALLBACK] Cerebras échoué pour "${label}" → Mistral | ${reason}`);
   }
 
   // 2. Mistral
@@ -165,9 +163,7 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
   } catch (mistralErr) {
     const reason = mistralErr.message.substring(0, 120);
     _stats.fallbacks.push({ label, from: 'mistral', reason });
-    if (!reason.includes('non définie') && !reason.includes('non installé')) {
-      console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Gemma | ${reason}`);
-    }
+    console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Gemma | ${reason}`);
   }
 
   // 3. Gemma
@@ -242,10 +238,12 @@ async function classifyArticle(title, excerpt, categories) {
   const validIds = new Set(categories.map(c => c.id));
 
   try {
-    return await runWithMultiProviderFallback(prompt, (text) => {
-      const id = parseInt(text.match(/\d+/)?.[0]);
-      return (id && validIds.has(id)) ? id : fallbackCat.id;
-    }, label, { maxTokens: 16 });
+    const text = await runGemmaWithFallback(async (model) => {
+      const r = await model.generateContent(prompt);
+      return r.response.text().trim();
+    }, label);
+    const id = parseInt(text.match(/\d+/)?.[0]);
+    return (id && validIds.has(id)) ? id : fallbackCat.id;
   } catch (error) {
     console.error('❌ Échec définitif classification:', error.message);
     return fallbackCat.id;
