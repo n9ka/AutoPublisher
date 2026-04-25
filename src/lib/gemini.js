@@ -211,29 +211,31 @@ async function classifyArticle(title, excerpt, categories) {
   if (!categories || categories.length === 0) return 1;
 
   const specificCats = categories.filter(c => c.id !== 1 && !GENERIC_CAT_RE.test(c.name));
-  const fallbackCat  = categories.find(c => GENERIC_CAT_RE.test(c.name)) ?? categories[0];
+  const fallbackCat  = categories.find(c => GENERIC_CAT_RE.test(c.name) || c.id === 1) ?? categories[0];
 
   if (specificCats.length === 0) return fallbackCat.id;
 
-  const categoriesWithHierarchy = specificCats.map(cat => {
+  const allCatsForPrompt = categories.map(cat => {
     let fullName = cat.name;
     if (cat.parent && cat.parent !== 0) {
       const parent = categories.find(c => c.id === cat.parent);
       if (parent) fullName = `${parent.name} > ${cat.name}`;
     }
-    return { id: cat.id, name: fullName };
+    const isGeneric = cat.id === 1 || GENERIC_CAT_RE.test(cat.name);
+    return { id: cat.id, name: fullName, ...(isGeneric && { dernier_recours: true }) };
   });
 
   const prompt = `
   Tu es un expert WordPress. Choisis l'ID de la catégorie la plus pertinente pour cet article.
   TITRE: "${title}"
   RESUME: "${excerpt}"
-  CATEGORIES DISPONIBLES: ${JSON.stringify(categoriesWithHierarchy)}
+  CATEGORIES DISPONIBLES: ${JSON.stringify(allCatsForPrompt)}
+  RÈGLE : Choisis toujours une catégorie thématique précise. N'utilise une catégorie marquée "dernier_recours" que si vraiment aucune autre ne correspond.
   Réponds UNIQUEMENT avec l'ID numérique choisi.
   `;
 
   const label = `classifyArticle("${title.substring(0, 60)}")`;
-  const validIds = new Set(specificCats.map(c => c.id));
+  const validIds = new Set(categories.map(c => c.id));
 
   try {
     return await runWithMultiProviderFallback(prompt, (text) => {
