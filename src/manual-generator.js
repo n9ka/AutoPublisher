@@ -182,7 +182,7 @@ async function runManualJob() {
       throw new Error('Contenu généré vide ou trop court — publication annulée.');
     }
 
-    const categories = await getCategories(site);
+    const categories = await getCategories({ ...site, wp_password: wpPassword });
     const categoryId = await classifyArticle(aiMetadata.title, aiMetadata.excerpt, categories);
 
     console.log('🖼️ Images...');

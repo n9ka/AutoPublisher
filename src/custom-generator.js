@@ -401,7 +401,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       }
     }
 
-    const categories = await getCategories(site);
+    const categories = await getCategories({ ...site, wp_password: wpPassword });
     const categoryId = await classifyArticle(aiOutput.metadata.title, aiOutput.metadata.excerpt, categories);
 
     const featuredMedia = await uploadImageToWordPress(

@@ -134,7 +134,8 @@ async function processNextArticle() {
 
     // 4. Classification
     console.log('  🏷️  Classification...');
-    const categories = await getCategories(site);
+    const secureSiteForCats = { ...site, wp_password: wpPassword };
+    const categories = await getCategories(secureSiteForCats);
     const categoryId = await classifyArticle(wpData.title, wpData.excerpt, categories);
 
     // 5. Image
