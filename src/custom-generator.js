@@ -353,25 +353,25 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       }
     }
 
-    // Upload et injection des images de section
+    // Upload et injection des images de section (séquentiel — uploads parallèles déclenchent le WAF)
+    const sectionImageReplaceMap = []; // URLs à sideloader par le bridge si REST échoue
     if (sectionImageUrls.length > 0) {
-      const uploadedSectionUrls = await Promise.all(
-        sectionImageUrls.map(async (url, idx) => {
-          if (!url) return null;
-          if (isBridgeMode) return url;
-          try {
-            const media = await uploadImageToWordPress(
-              site.url, site.wp_user, wpPassword,
-              url, `${keyword} — image ${idx + 1}`,
-              'rest_api', site.bridge_key
-            );
-            return media?.url || url;
-          } catch {
-            console.warn(`  ⚠️ Upload image section ${idx + 1} échoué — URL Runware utilisée en fallback`);
-            return url;
-          }
-        })
-      );
+      const uploadedSectionUrls = [];
+      for (let idx = 0; idx < sectionImageUrls.length; idx++) {
+        const url = sectionImageUrls[idx];
+        if (!url) { uploadedSectionUrls.push(null); continue; }
+        const media = await uploadImageToWordPress(
+          site.url, site.wp_user, wpPassword,
+          url, sectionImageAltTexts[idx] || `${keyword} — image ${idx + 1}`,
+          site.connection_mode, site.bridge_key
+        );
+        if (media?.is_bridge || !media?.url) {
+          sectionImageReplaceMap.push({ url, alt: sectionImageAltTexts[idx] || '' });
+          uploadedSectionUrls.push(url);
+        } else {
+          uploadedSectionUrls.push(media.url);
+        }
+      }
       finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls, sectionImageAltTexts);
     }
 
@@ -423,6 +423,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       date: job.scheduled_at || null,
       infographic_url: infographicUrl || null,
       infographic_alt: infographicUrl ? infographicAlt : null,
+      section_image_urls: sectionImageReplaceMap.length > 0 ? sectionImageReplaceMap : undefined,
     });
 
     await supabase.from('articles_queue').update({

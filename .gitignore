@@ -14,3 +14,5 @@ archive/
 
 # Scripts locaux (usage personnel, ne pas publier)
 src/workflow-publisher.js
+src/patch-recategorize.js
+src/patch-missing-images.js

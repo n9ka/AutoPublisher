@@ -134,6 +134,9 @@ async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
       payload.infographic_image_url = postData.infographic_url;
       payload.infographic_alt_text = postData.infographic_alt || 'Infographie';
     }
+    if (postData.section_image_urls && postData.section_image_urls.length > 0) {
+      payload.section_image_urls = postData.section_image_urls;
+    }
   } else {
     payload.title = postData.title;
     payload.content = postData.content;
