@@ -182,6 +182,7 @@ async function runCustomJob() {
     const briefRaw = await generateWithLLM(analystPrompt, briefModel);
     const strategicBrief = parseAiJson(briefRaw);
     console.log('  ✅ Brief généré. Format détecté:', strategicBrief.format);
+    console.log(`  🖼️  section_images opts=${sectionImgCount} | prompts=${JSON.stringify(strategicBrief.section_image_prompts?.length ?? 'absent')}`);
 
     // ── PHASE 2 : Rédaction ────────────────────────────────────────────────
     console.log(`✍️ [CUSTOM] Phase 2: Rédaction (${writingModel.label})...`);
