@@ -36,7 +36,7 @@ jobs:
           CACHE_DB_SERVICE_KEY: ${{ secrets.CACHE_DB_SERVICE_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          # Clés providers LLM — seules celles configurées en DB sont nécessaires
+          # OpenRouter = clé unique pour tous les modèles configurés en DB + fallback JSON repair
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
