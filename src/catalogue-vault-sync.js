@@ -129,7 +129,7 @@ ${site.note_interne ? `\n## Note interne\n\n${site.note_interne}\n` : ''}`
 
 function buildIndex(allSites, totalSites) {
   const now = new Date().toISOString()
-  const sorted = [...allSites].sort((a, b) => (b.majestic?.mj_trust_flow ?? 0) - (a.majestic?.mj_trust_flow ?? 0))
+  const sorted = [...allSites].sort((a, b) => cleanDomain(a.url).localeCompare(cleanDomain(b.url)))
 
   const list = sorted.map(s => {
     const domain = (s.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
@@ -163,7 +163,7 @@ TABLE url AS "Site", thematiques AS "Thématiques", price_with_redaction AS "Pri
 FROM "shared/catalogue-sites"
 WHERE file.name != "_index" AND file.name != "_template" AND file.name != "_exemple-sport-com"
 WHERE active = true
-SORT tf DESC
+SORT file.name ASC
 \`\`\`
 `
 }
