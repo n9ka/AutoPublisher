@@ -13,7 +13,7 @@ const { decrypt } = require('./lib/encryption');
 const { spendCredit, refundCredit } = require('./lib/credits');
 const { upsertToWpCache } = require('./lib/supabase-data');
 const { SEO_GENERATOR_PROMPT } = require('./prompts/seo-generator');
-const { repairJson } = require('./lib/json-helper');
+const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
 
@@ -63,6 +63,7 @@ async function runManualJob() {
     let finalHtml = "";
     let aiMetadata = {};
     let infographicUrl = null;
+    let jsonRepaired = false;
 
     if (mode === 'expert') {
       await spendCredit(site.user_id, 5, jobId);
@@ -103,7 +104,7 @@ async function runManualJob() {
         console.log(`✍️ [EXPERT] Phase 3: Rédaction Premium - Tentative ${i}/2...`);
         try {
           const raw = await generateDeepSeek(writerPrompt, 'deepseek-reasoner');
-          const parsed = parseAiJson(raw);
+          const parsed = await parseAiJson(raw);
           if (parsed._isTruncated && i === 1) {
             console.warn("  ⚠️ Tronqué, relance...");
             continue;
@@ -117,6 +118,7 @@ async function runManualJob() {
       }
 
       aiMetadata = aiOutput.metadata;
+      if (aiOutput._jsonRepaired) jsonRepaired = true;
       finalHtml = (aiOutput.html || "").replace(/\{[\s\S]*?"@context":\s*"https:\/\/schema\.org"[\s\S]*?\}/gi, '').trim();
 
       if (aiOutput.faq) {
@@ -241,7 +243,8 @@ async function runManualJob() {
     }
 
     console.log(`✅ Succès : ${pubResult.link}`);
-    await sendTelegram(`✅ <b>[SEO ${mode.toUpperCase()}]</b> Article publié\n• <a href="${pubResult.link}">${aiMetadata.title}</a>\n• ${site.name}`);
+    const repairNote = jsonRepaired ? '\n⚠️ JSON réparé par IA (OpenRouter)' : '';
+    await sendTelegram(`✅ <b>[SEO ${mode.toUpperCase()}]</b> Article publié\n• <a href="${pubResult.link}">${aiMetadata.title}</a>\n• ${site.name}${repairNote}`);
     process.exit(0);
 
   } catch (error) {
@@ -253,7 +256,7 @@ async function runManualJob() {
   }
 }
 
-function parseAiJson(text) {
+async function parseAiJson(text) {
   let jsonStr = text.trim().replace(/```json/g, '').replace(/```/g, '');
   const firstBrace = jsonStr.indexOf('{');
   if (firstBrace === -1) throw new Error("Structure JSON non trouvée");
@@ -265,10 +268,21 @@ function parseAiJson(text) {
       return parsed;
     } catch (e) {}
   }
-  const { json: fixed, isTruncated } = repairJson(jsonStr);
-  const parsed = JSON.parse(fixed);
-  parsed._isTruncated = isTruncated;
-  return parsed;
+  try {
+    const { json: fixed, isTruncated } = repairJson(jsonStr);
+    const parsed = JSON.parse(fixed);
+    parsed._isTruncated = isTruncated;
+    return parsed;
+  } catch (e) {
+    // Dernier recours : réparation par IA (OpenRouter Gemini Flash Lite)
+    console.warn("⚠️ Réparation locale échouée, tentative OpenRouter (Gemini Flash Lite)...");
+    const fixedStr = await repairJsonWithAI(jsonStr);
+    const parsed = JSON.parse(fixedStr);
+    parsed._isTruncated = false;
+    parsed._jsonRepaired = true;
+    console.log("  ✅ Réparation IA réussie.");
+    return parsed;
+  }
 }
 
 runManualJob();

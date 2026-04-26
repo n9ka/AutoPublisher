@@ -110,4 +110,43 @@ function repairJson(text) {
   };
 }
 
-module.exports = { repairJson };
+async function repairJsonWithAI(brokenJson) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY non définie — réparation IA impossible');
+
+  const prompt = `The following JSON is syntactically invalid. Fix ONLY the syntax errors (bad escape sequences, unescaped quotes, missing commas, unclosed strings). Do NOT change any content value. Return ONLY the fixed JSON, no explanation, no markdown.
+
+${brokenJson}`;
+
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash-lite',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 16000,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter repair error ${res.status}: ${err.substring(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('Réponse OpenRouter repair vide');
+
+  let cleaned = content.trim().replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  if (firstBrace > 0) cleaned = cleaned.substring(firstBrace);
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (lastBrace !== -1 && lastBrace < cleaned.length - 1) cleaned = cleaned.substring(0, lastBrace + 1);
+
+  return cleaned;
+}
+
+module.exports = { repairJson, repairJsonWithAI };

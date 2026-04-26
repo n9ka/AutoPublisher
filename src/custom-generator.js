@@ -16,7 +16,7 @@ const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
 const { CUSTOM_ANALYST_PROMPT } = require('./prompts/custom-analyst');
 const { CUSTOM_WRITER_PROMPT } = require('./prompts/custom-writer');
-const { repairJson } = require('./lib/json-helper');
+const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 
 // Coûts fixes par composant (crédits)
 const FIXED_COSTS = {
@@ -42,7 +42,7 @@ function calculateTotalCredits(opts, briefModel, writingModel) {
   return total;
 }
 
-function parseAiJson(text) {
+async function parseAiJson(text) {
   let jsonStr = text.trim().replace(/```json/g, '').replace(/```/g, '');
   const firstBrace = jsonStr.indexOf('{');
   if (firstBrace === -1) throw new Error('Structure JSON non trouvée dans la réponse LLM');
@@ -54,10 +54,21 @@ function parseAiJson(text) {
       return parsed;
     } catch (e) {}
   }
-  const { json: fixed, isTruncated } = repairJson(jsonStr);
-  const parsed = JSON.parse(fixed);
-  parsed._isTruncated = isTruncated;
-  return parsed;
+  try {
+    const { json: fixed, isTruncated } = repairJson(jsonStr);
+    const parsed = JSON.parse(fixed);
+    parsed._isTruncated = isTruncated;
+    return parsed;
+  } catch (e) {
+    // Dernier recours : réparation par IA (OpenRouter Gemini Flash Lite)
+    console.warn("⚠️ Réparation locale échouée, tentative OpenRouter (Gemini Flash Lite)...");
+    const fixedStr = await repairJsonWithAI(jsonStr);
+    const parsed = JSON.parse(fixedStr);
+    parsed._isTruncated = false;
+    parsed._jsonRepaired = true;
+    console.log("  ✅ Réparation IA réussie.");
+    return parsed;
+  }
 }
 
 /**
@@ -180,7 +191,7 @@ async function runCustomJob() {
       .replace('{{section_images_block}}', sectionImagesBlock);
 
     const briefRaw = await generateWithLLM(analystPrompt, briefModel);
-    const strategicBrief = parseAiJson(briefRaw);
+    const strategicBrief = await parseAiJson(briefRaw);
     console.log('  ✅ Brief généré. Format détecté:', strategicBrief.format);
     console.log(`  🖼️  section_images opts=${sectionImgCount} | prompts=${JSON.stringify(strategicBrief.section_image_prompts?.length ?? 'absent')}`);
 
@@ -253,7 +264,7 @@ async function runCustomJob() {
       .replace('{{writing_instructions_block}}', writingInstructionsBlock)
       .replace('{{humanization_instructions_block}}', humanizationInstructionsBlock);
 
-    let aiOutput = await generateWithLLM(writerPrompt, writingModel).then(raw => parseAiJson(raw));
+    let aiOutput = await parseAiJson(await generateWithLLM(writerPrompt, writingModel));
 
     // Phase 2b : patch sections manquantes (si nécessaire, modèle économique)
     if (aiOutput._missing_sections && aiOutput._missing_sections.length > 0) {
@@ -457,7 +468,8 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     }
 
     console.log(`✅ [CUSTOM] Succès : ${pubResult.link}`);
-    await sendTelegram(`✅ <b>[SEO CUSTOM]</b> Article publié\n• <a href="${pubResult.link}">${aiOutput.metadata.title}</a>\n• ${site.name}`);
+    const repairNote = aiOutput._jsonRepaired ? '\n⚠️ JSON réparé par IA (OpenRouter)' : '';
+    await sendTelegram(`✅ <b>[SEO CUSTOM]</b> Article publié\n• <a href="${pubResult.link}">${aiOutput.metadata.title}</a>\n• ${site.name}${repairNote}`);
     process.exit(0);
 
   } catch (error) {

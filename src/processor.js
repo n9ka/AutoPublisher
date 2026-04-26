@@ -12,7 +12,7 @@ const { upsertToWpCache } = require('./lib/supabase-data');
 const { MAIN_PROMPT } = require('./prompts/templates');
 const { TREND_SPY_PROMPT } = require('./prompts/trend-spy');
 const { buildLanguageBlock } = require('./lib/languages');
-const { repairJson } = require('./lib/json-helper');
+const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
 
@@ -124,7 +124,7 @@ async function processNextArticle() {
     
     let aiOutput;
     try {
-      aiOutput = parseAiJson(rawResponse);
+      aiOutput = await parseAiJson(rawResponse);
     } catch (e) {
       console.error("Détail erreur JSON:", e.message);
       throw new Error('Sortie IA invalide (pas de JSON parsable)');
@@ -192,7 +192,7 @@ async function processNextArticle() {
           published_url: 'https://dry-run.test'
         })
         .eq('id', articleId);
-      return { status: 'published', title: wpData.title, url: 'https://dry-run.test', siteName: site.name, credits: creditsSpent };
+      return { status: 'published', title: wpData.title, url: 'https://dry-run.test', siteName: site.name, credits: creditsSpent, jsonRepaired: !!aiOutput._jsonRepaired };
     } else {
       const secureSiteConfig = { ...site, wp_password: wpPassword };
       const pubResult = await publishPost(secureSiteConfig, postPayload);
@@ -233,7 +233,7 @@ async function processNextArticle() {
         });
       }
 
-      return { status: 'published', title: wpData.title, url: pubResult.link, siteName: site.name, credits: creditsSpent };
+      return { status: 'published', title: wpData.title, url: pubResult.link, siteName: site.name, credits: creditsSpent, jsonRepaired: !!aiOutput._jsonRepaired };
     }
 
   } catch (error) {
@@ -261,14 +261,14 @@ async function processNextArticle() {
   }
 }
 
-function parseAiJson(text) {
+async function parseAiJson(text) {
   let jsonStr = text.trim();
   // Nettoyage Markdown
   jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '');
-  
+
   const firstBrace = jsonStr.indexOf('{');
   const lastBrace = jsonStr.lastIndexOf('}');
-  
+
   if (firstBrace === -1 || lastBrace === -1) {
     throw new Error("Structure JSON non trouvée dans la réponse IA");
   }
@@ -285,8 +285,19 @@ function parseAiJson(text) {
       const { json: fixedJson } = repairJson(rawJson);
       return JSON.parse(fixedJson);
     } catch (e2) {
-      console.error("Échec sauvetage JSON. Fin du texte :", jsonStr.slice(-300));
-      throw new Error(`Erreur JSON fatale: ${e2.message}`);
+      // 3. Dernier recours : réparation par IA (OpenRouter Gemini Flash Lite)
+      console.warn("⚠️ Réparation locale échouée, tentative OpenRouter (Gemini Flash Lite)...");
+      try {
+        const fixed = await repairJsonWithAI(rawJson);
+        const parsed = JSON.parse(fixed);
+        parsed._isTruncated = false;
+        parsed._jsonRepaired = true;
+        console.log("  ✅ Réparation IA réussie.");
+        return parsed;
+      } catch (e3) {
+        console.error("Échec sauvetage JSON. Fin du texte :", jsonStr.slice(-300));
+        throw new Error(`Erreur JSON fatale: ${e3.message}`);
+      }
     }
   }
 }
@@ -327,9 +338,12 @@ function parseAiJson(text) {
       const totalCredits = published.reduce((sum, r) => sum + (r.credits || 0), 0);
       lines.push(`\n✅ <b>${published.length} publié(s)</b>`);
       for (const r of published) {
-        lines.push(`• <a href="${r.url}">${r.title}</a> — ${r.siteName}`);
+        const repairTag = r.jsonRepaired ? ' 🔧' : '';
+        lines.push(`• <a href="${r.url}">${r.title}</a> — ${r.siteName}${repairTag}`);
       }
       lines.push(`\n💳 Crédits consommés : ${totalCredits}`);
+      const repairedCount = published.filter(r => r.jsonRepaired).length;
+      if (repairedCount > 0) lines.push(`⚠️ ${repairedCount} JSON réparé(s) par IA (OpenRouter)`);
     }
 
     if (failed.length > 0) {
