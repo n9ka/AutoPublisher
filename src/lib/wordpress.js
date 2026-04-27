@@ -8,7 +8,7 @@ function getHeaders(baseUrl, auth = null, contentType = 'application/json', brid
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br, zstd',
+    'Accept-Encoding': 'gzip, deflate, br',
     'Cache-Control': 'no-cache',
     'Pragma': 'no-cache',
     'Sec-Ch-Ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
@@ -250,7 +250,8 @@ async function getCategories(siteConfig) {
       timeout: 20000,
       headers: getHeaders(baseUrl, auth, 'application/json', isBridge ? bridge_key : null)
     });
-    return response.data.map(cat => ({ id: cat.id, name: cat.name, slug: cat.slug }));
+    const decode = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+    return response.data.map(cat => ({ id: cat.id, name: decode(cat.name), slug: cat.slug }));
   } catch (error) {
     return [];
   }
