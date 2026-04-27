@@ -27,6 +27,22 @@ const { generateRunwareImage } = require('./lib/runware');
 
 const OUTPUT_DIR = path.join(__dirname, '../../Workflow-Entreprise/output');
 
+async function sendTelegram(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  try {
+    await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
+  } catch (e) {
+    console.warn('⚠️  Telegram notification échouée:', e.message);
+  }
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const get = (key) => {
@@ -60,24 +76,29 @@ async function fetchSiteConfig(siteArg) {
   return res.data;
 }
 
+const GENERIC_CAT_RE = /actualit|divers|g[eé]n[eé]ral|news|autres|uncategor|non.?class/i;
+
 async function classifyCategory(title, excerpt, categories) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || categories.length === 0) return categories[0]?.id ?? 1;
+  const fallbackCat = categories.find(c => GENERIC_CAT_RE.test(c.name) || c.id === 1) ?? categories[0];
+  if (!apiKey || categories.length === 0) return fallbackCat?.id ?? 1;
 
+  const validIds = new Set(categories.map(c => c.id));
   const catList = categories.map(c => {
     let fullName = c.name;
     if (c.parent && c.parent !== 0) {
       const parent = categories.find(p => p.id === c.parent);
       if (parent) fullName = `${parent.name} > ${c.name}`;
     }
-    return { id: c.id, name: fullName };
+    const isGeneric = c.id === 1 || GENERIC_CAT_RE.test(c.name);
+    return { id: c.id, name: fullName, ...(isGeneric && { dernier_recours: true }) };
   });
 
   const prompt = `Tu es un expert WordPress. Choisis l'ID de la catégorie la plus pertinente pour cet article.
 TITRE: "${title}"
 RESUME: "${excerpt}"
 CATEGORIES DISPONIBLES: ${JSON.stringify(catList)}
-RÈGLE : préfère une catégorie thématique précise. N'utilise une catégorie générique (Actualités, Divers, Général, News) qu'en dernier recours.
+RÈGLE : Choisis toujours une catégorie thématique précise. N'utilise une catégorie marquée "dernier_recours" que si vraiment aucune autre ne correspond.
 Réponds UNIQUEMENT avec l'ID numérique choisi.`;
 
   try {
@@ -88,10 +109,10 @@ Réponds UNIQUEMENT avec l'ID numérique choisi.`;
     );
     const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     const id = parseInt(text.match(/\d+/)?.[0]);
-    return isNaN(id) ? categories[0]?.id : id;
+    return (id && validIds.has(id)) ? id : fallbackCat?.id ?? 1;
   } catch (err) {
     console.warn(`⚠️  Classification échouée (${err.message}) — catégorie par défaut.`);
-    return categories[0]?.id ?? 1;
+    return fallbackCat?.id ?? 1;
   }
 }
 
@@ -219,6 +240,18 @@ async function main() {
     fs.renameSync(htmlPath, path.join(publishedDir, `${slug}.html`));
     fs.renameSync(jsonPath, path.join(publishedDir, `${slug}.json`));
     console.log('📁 Fichiers déplacés → output/publie/');
+
+    // Notification Telegram
+    const domain = siteArg.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const statusEmoji = scheduledDate ? '📅' : '✅';
+    const statusText = scheduledDate ? `Planifié — ${scheduledDate}` : 'Publié';
+    await sendTelegram(
+      `${statusEmoji} <b>${statusText}</b>\n` +
+      `🌐 ${domain}\n` +
+      `📝 ${metadata.title}\n` +
+      `🆔 Post ID : ${result.id}\n` +
+      `🔗 ${result.link}`
+    );
   } else {
     console.error('❌ Échec de publication.');
     process.exit(1);
