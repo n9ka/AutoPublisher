@@ -90,6 +90,41 @@ function injectSectionImages(html, sectionImageUrls, altTexts = []) {
   return result;
 }
 
+// Fallback pour les modèles qui n'écrivent pas les markers <!-- SECTION_IMAGE_N -->
+// Injecte les images à la fin de sections H2 réparties équitablement
+// skipPartsIdx : index dans le tableau parts à exclure (section adjacente à l'infographie)
+function injectSectionImagesByH2(html, imageUrls, altTexts, headingMarker, skipPartsIdx) {
+  const parts = html.split(headingMarker);
+  const totalSections = parts.length - 1;
+  const validUrls = imageUrls.filter(Boolean);
+  if (totalSections === 0 || validUrls.length === 0) return html;
+
+  const available = [];
+  for (let i = 1; i <= totalSections; i++) {
+    if (i !== skipPartsIdx) available.push(i);
+  }
+  if (available.length === 0) return html;
+
+  const imgCount = Math.min(validUrls.length, available.length);
+  const chosenMap = new Map();
+  let imgCursor = 0;
+  for (let i = 0; i < imgCount; i++) {
+    const pos = Math.round(i * (available.length - 1) / Math.max(imgCount - 1, 1));
+    const partsIdx = available[Math.min(pos, available.length - 1)];
+    if (!chosenMap.has(partsIdx)) chosenMap.set(partsIdx, imgCursor++);
+  }
+
+  return parts.map((part, i) => {
+    const prefix = i === 0 ? '' : headingMarker;
+    const imgIdx = chosenMap.get(i);
+    if (imgIdx !== undefined && validUrls[imgIdx]) {
+      const alt = (altTexts[imgIdx] || '').replace(/"/g, '&quot;').substring(0, 120);
+      return prefix + part + `\n<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${validUrls[imgIdx]}" alt="${alt}"/></figure><!-- /wp:image -->\n`;
+    }
+    return prefix + part;
+  }).join('');
+}
+
 async function runCustomJob() {
   const jobId = process.argv[2];
   if (!jobId) {
@@ -357,9 +392,11 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     const h2Count = (finalHtml.match(/<!-- wp:heading \{"level":2\}/g) || []).length;
     const infographicAtH2 = h2Count > 0 ? Math.floor(h2Count / 2) : 0;
 
-    // Si infographie activée : les images de section démarrent après la position de l'infographie
-    // → on supprime les markers SECTION_IMAGE avant la position d'insertion, on renumérote les suivants
-    if (infographicUrl && sectionImgCount > 0) {
+    const hasMarkers = /<!-- SECTION_IMAGE_\d+ -->/.test(finalHtml);
+
+    // Markers présents (DeepSeek, modèles qui suivent l'instruction) :
+    // supprime ceux avant l'infographie et renumérote les suivants
+    if (hasMarkers && infographicUrl && sectionImgCount > 0) {
       for (let i = 1; i <= infographicAtH2; i++) {
         finalHtml = finalHtml.replace(`<!-- SECTION_IMAGE_${i} -->`, '');
       }
@@ -395,7 +432,13 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
           uploadedSectionUrls.push(media.url);
         }
       }
-      finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls, sectionImageAltTexts);
+      if (hasMarkers) {
+        finalHtml = injectSectionImages(finalHtml, uploadedSectionUrls, sectionImageAltTexts);
+      } else {
+        // Fallback : injection par position H2 pour les modèles sans markers (Claude, Kimi, etc.)
+        const skipPartsIdx = infographicUrl && infographicAtH2 > 0 ? infographicAtH2 : null;
+        finalHtml = injectSectionImagesByH2(finalHtml, uploadedSectionUrls, sectionImageAltTexts, HEADING_MARKER, skipPartsIdx);
+      }
     }
 
     const infographicAlt = `${INFOGRAPHIC_LABEL[outputLanguage] || 'Infographic'} : ${keyword}`;
