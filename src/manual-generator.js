@@ -169,7 +169,7 @@ async function runManualJob() {
         const model = i === 1 ? 'deepseek-chat' : 'deepseek-reasoner';
         if (i === 2) console.warn('  ⚠️ [EXPRESS] Troncature détectée — relance sur deepseek-reasoner...');
         const raw = await generateDeepSeek(expressPrompt, model);
-        const parsed = parseAiJson(raw);
+        const parsed = await parseAiJson(raw);
         if (parsed._isTruncated && i === 1) continue;
         aiOutput = parsed;
         break;
