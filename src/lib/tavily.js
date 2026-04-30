@@ -37,4 +37,23 @@ async function researchWithTavily(query) {
   }
 }
 
-module.exports = { researchWithTavily };
+async function extractWithTavily(url) {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    console.log(`  🌐 Tavily Extract pour : ${url}...`);
+    const response = await axios.post('https://api.tavily.com/extract', {
+      api_key: apiKey,
+      urls: [url],
+    });
+    const result = (response.data.results || [])[0];
+    if (!result?.raw_content || result.raw_content.length < 200) return null;
+    return result.raw_content;
+  } catch (error) {
+    console.error('  ❌ Erreur Tavily Extract:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+module.exports = { researchWithTavily, extractWithTavily };

@@ -4,7 +4,7 @@ require('dotenv').config();
 const cheerio = require('cheerio');
 const { supabase } = require('./lib/supabase');
 const { searchBrave } = require('./lib/research');
-const { researchWithTavily } = require('./lib/tavily');
+const { researchWithTavily, extractWithTavily } = require('./lib/tavily');
 const { buildLanguageBlock } = require('./lib/languages');
 const { generateContent } = require('./lib/deepseek');
 const { generateRunwareImage } = require('./lib/runware');
@@ -118,29 +118,48 @@ async function fetchHtml(url, attempt = 1) {
 
 async function scrapeUrl(url) {
   console.log(`  🌐 Scraping : ${url}`);
-  const html = await fetchHtml(url);
-  const $ = cheerio.load(html);
 
-  // Supprime le bruit avant extraction
-  $('script, style, nav, header, footer, aside, iframe, noscript, [class*="sidebar"], [class*="menu"], [class*="cookie"], [class*="popup"], [id*="sidebar"], [id*="menu"]').remove();
+  // Tentative 1 : fetch direct avec headers navigateur
+  let usedFallback = false;
+  let title = '';
+  let text = '';
 
-  const title = $('h1').first().text().trim() || $('title').text().trim() || '';
+  try {
+    const html = await fetchHtml(url);
+    const $ = cheerio.load(html);
+    $('script, style, nav, header, footer, aside, iframe, noscript, [class*="sidebar"], [class*="menu"], [class*="cookie"], [class*="popup"], [id*="sidebar"], [id*="menu"]').remove();
+    title = $('h1').first().text().trim() || $('title').text().trim() || '';
+    const selectors = [
+      '.entry-content', '.post-content', '.article-content', '.article-body',
+      'article', 'main', '.content', '#content', '#main', 'body',
+    ];
+    for (const sel of selectors) {
+      const candidate = $(sel).first().text().replace(/\s+/g, ' ').trim();
+      if (candidate.length >= 400) {
+        text = candidate.substring(0, 15000);
+        break;
+      }
+    }
+  } catch (fetchErr) {
+    console.warn(`  ⚠️ Fetch direct échoué (${fetchErr.message}), fallback Tavily Extract...`);
+  }
 
-  // Sélecteurs dans l'ordre de préférence (WordPress en premier)
-  const selectors = [
-    '.entry-content', '.post-content', '.article-content', '.article-body',
-    'article', 'main', '.content', '#content', '#main', 'body',
-  ];
-
-  for (const sel of selectors) {
-    const text = $(sel).first().text().replace(/\s+/g, ' ').trim();
-    if (text.length >= 400) {
-      console.log(`  ✅ Scrape OK via "${sel}" — ${text.length} chars, titre: "${title}"`);
-      return { title, text: text.substring(0, 15000) };
+  // Tentative 2 : Tavily Extract si fetch bloqué ou contenu insuffisant
+  if (!text) {
+    usedFallback = true;
+    const tavilyText = await extractWithTavily(url);
+    if (tavilyText && tavilyText.length >= 400) {
+      text = tavilyText.substring(0, 15000);
+      title = title || url;
     }
   }
 
-  throw new Error('Contenu insuffisant — site probablement protégé (Cloudflare, paywall, ou SPA sans rendu serveur).');
+  if (!text) {
+    throw new Error('Contenu inaccessible — site protégé (Cloudflare, paywall, SPA sans SSR) et Tavily Extract a échoué.');
+  }
+
+  console.log(`  ✅ Scrape OK ${usedFallback ? '[via Tavily Extract]' : ''} — ${text.length} chars, titre: "${title}"`);
+  return { title, text };
 }
 
 async function runCopycatJob() {
