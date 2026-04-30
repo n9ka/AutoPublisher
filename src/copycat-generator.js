@@ -219,8 +219,9 @@ async function runCopycatJob() {
     console.log('🔍 [COPYCAT] Scraping de la source...');
     const scraped = await scrapeUrl(sourceUrl);
 
-    // Mot-clé de recherche = titre scrapé ou source_title du job
-    const searchKeyword = job.source_title || scraped.title || new URL(sourceUrl).hostname;
+    // Mot-clé de recherche : titre > source_title > slug URL > hostname
+    const urlSlug = new URL(sourceUrl).pathname.replace(/^\/|\/$/g, '').split('/').pop()?.replace(/-/g, ' ').trim();
+    const searchKeyword = (scraped.title || job.source_title || urlSlug || new URL(sourceUrl).hostname).substring(0, 120);
 
     // ── RECHERCHE PARALLÈLE ──────────────────────────────────────────────────
     console.log(`🔍 [COPYCAT] Enrichissement : recherche parallèle sur "${searchKeyword}"...`);
@@ -233,7 +234,11 @@ async function runCopycatJob() {
     console.log(`✍️ [COPYCAT] Rédaction (${DEEPSEEK_MODEL})...`);
     const persona = site.persona || {};
 
+    const sourceWordCount = scraped.text.split(/\s+/).length;
+    const targetWordCount = Math.max(1200, Math.round(sourceWordCount * 1.1));
+
     const writerPrompt = COPYCAT_WRITER_PROMPT
+      .replace('{{target_word_count}}', targetWordCount)
       .replace('{{language_block}}', languageBlock)
       .replace('{{persona_nom}}', persona.name || 'Expert')
       .replace('{{persona_background}}', persona.background || '')

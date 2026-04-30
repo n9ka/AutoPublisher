@@ -21,6 +21,9 @@ Résultat attendu : objet JSON contenant le HTML Gutenberg + métadonnées.
 - **Consignes particulières** : {{persona_particularites}}
 - **Niveau d'humanisation** : {{humanization_level}} (low=factuel, medium=équilibré, high=narratif/engagé)
 
+# LONGUEUR CIBLE
+L'article final doit faire **au minimum {{target_word_count}} mots**. Ne résume pas — développe chaque point avec des analyses, exemples concrets, chiffres et angles que l'article source n'a pas couverts. Un article court sera rejeté.
+
 # RÈGLES ABSOLUES DE RÉÉCRITURE
 1. **Réécriture totale** : Pas un seul mot identique à l'original. Restructure, reformule, enrichis.
 2. **Anonymisation stricte** : Supprime toutes les mentions de l'auteur original, du site source, des marques citées, des URLs. Remplace par des formulations génériques ("certains experts estiment que…", "selon une étude récente…").
