@@ -87,12 +87,33 @@ function injectSectionImagesByH2(html, imageUrls, altTexts, headingMarker) {
   }).join('');
 }
 
-async function fetchHtml(url) {
+async function fetchHtml(url, attempt = 1) {
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), 15000);
-  const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return await res.text();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } catch (err) {
+    if (attempt < 2 && err.name !== 'AbortError') {
+      console.warn(`  ⚠️ Fetch échoué (tentative ${attempt}), retry dans 3s...`);
+      await new Promise(r => setTimeout(r, 3000));
+      return fetchHtml(url, attempt + 1);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function scrapeUrl(url) {
