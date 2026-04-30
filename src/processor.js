@@ -116,8 +116,8 @@ async function processNextArticle() {
       .replace('{{persona_particularites}}', persona.particularities || '')
       .replace('{{humanization_level}}', persona.humanization_level || 'medium')
       .replace('{{current_date}}', currentDate)
-      .replace('{{source_content}}', finalContent.substring(0, 15000))
-      .replace('{{search_results}}', finalContent.substring(0, 15000))
+      .replace('{{source_content}}', finalContent.substring(0, 50000))
+      .replace('{{search_results}}', finalContent.substring(0, 50000))
       .replace('{{trend_title}}', queueItem.source_title);
 
     const rawResponse = await generateContent(filledPrompt);
