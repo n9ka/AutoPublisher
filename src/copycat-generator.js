@@ -18,7 +18,7 @@ const { sendTelegram } = require('./lib/telegram');
 const { COPYCAT_WRITER_PROMPT } = require('./prompts/copycat-writer');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 
-const COPYCAT_CREDITS = 5;
+const COPYCAT_CREDITS = 6;
 const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 
 async function parseAiJson(text) {
@@ -136,7 +136,7 @@ async function scrapeUrl(url) {
     for (const sel of selectors) {
       const candidate = $(sel).first().text().replace(/\s+/g, ' ').trim();
       if (candidate.length >= 400) {
-        text = candidate.substring(0, 15000);
+        text = candidate.substring(0, 50000);
         break;
       }
     }
@@ -149,7 +149,7 @@ async function scrapeUrl(url) {
     usedFallback = true;
     const tavilyText = await extractWithTavily(url);
     if (tavilyText && tavilyText.length >= 400) {
-      text = tavilyText.substring(0, 15000);
+      text = tavilyText.substring(0, 50000);
       title = title || url;
     }
   }
