@@ -127,6 +127,8 @@ async function checkAutoSeo(site) {
   const githubToken = process.env.GH_PAT;
   const repo = process.env.GITHUB_REPO;
 
+  let dispatchOk = false;
+
   if (githubToken && repo) {
     try {
       console.log(`  🚀 AutoPilot : Déclenchement du workflow GitHub pour le job ${newJobId}...`);
@@ -134,7 +136,7 @@ async function checkAutoSeo(site) {
       const workflowFile = mode === 'custom' ? 'custom-generator.yml' : 'manual-generator.yml';
       await axios.post(`https://api.github.com/repos/${repo}/actions/workflows/${workflowFile}/dispatches`, {
         ref: 'main',
-        inputs: { job_id: newJobId }
+        inputs: { job_id: String(newJobId) }
       }, {
         headers: {
           'Authorization': `Bearer ${githubToken}`,
@@ -142,27 +144,41 @@ async function checkAutoSeo(site) {
           'X-GitHub-Api-Version': '2022-11-28'
         }
       });
+      dispatchOk = true;
     } catch (ghErr) {
-      console.error('  ⚠️ AutoPilot : Erreur déclenchement GitHub (le job sera traité au prochain cycle manuel):', ghErr.message);
+      const statusCode = ghErr.response?.status;
+      console.error(`  ❌ AutoPilot : Échec dispatch GitHub (${statusCode || ghErr.message}) — job ${newJobId} marqué failed, keyword remis en backlog.`);
+      await supabase.from('articles_queue').update({
+        status: 'failed',
+        error_message: `GitHub dispatch failed: ${statusCode || ghErr.message}`
+      }).eq('id', newJobId);
+      return false;
     }
   } else {
-    console.warn(`  ⚠️ AutoPilot : Lancement automatique sauté (Variables manquantes : ${!githubToken ? 'GH_PAT ' : ''}${!repo ? 'GITHUB_REPO' : ''})`);
+    console.error(`  ❌ AutoPilot : GH_PAT/GITHUB_REPO manquants — job ${newJobId} marqué failed, keyword remis en backlog.`);
+    await supabase.from('articles_queue').update({
+      status: 'failed',
+      error_message: 'GitHub dispatch impossible : GH_PAT ou GITHUB_REPO non configurés'
+    }).eq('id', newJobId);
+    return false;
   }
 
-  // 8. Marquer le mot-clé comme traité
-  await supabase
-    .from('seo_backlog')
-    .update({ status: 'done' })
-    .eq('id', backlogItem.id);
+  // 8. Marquer le mot-clé comme traité (uniquement si dispatch OK)
+  if (dispatchOk) {
+    await supabase
+      .from('seo_backlog')
+      .update({ status: 'done' })
+      .eq('id', backlogItem.id);
 
-  // 9. Mettre à jour le métronome du site
-  await supabase
-    .from('wordpress_sites')
-    .update({ last_auto_seo_at: new Date().toISOString() })
-    .eq('id', site.id);
+    // 9. Mettre à jour le métronome du site
+    await supabase
+      .from('wordpress_sites')
+      .update({ last_auto_seo_at: new Date().toISOString() })
+      .eq('id', site.id);
 
-  console.log(`  ✅ AutoPilot : Job ajouté et lancé.`);
-  return true;
+    console.log(`  ✅ AutoPilot : Job ajouté et workflow lancé.`);
+  }
+  return dispatchOk;
 }
 
 async function detect() {
@@ -248,7 +264,13 @@ async function detect() {
 
     console.log(`  🧐 Analyse IA de ${uniqueCandidates.length} candidats RSS...`);
     const candidatesToAnalyze = uniqueCandidates.sort((a, b) => b.pubDate - a.pubDate).slice(0, 20);
-    const selectedIndices = await filterBestArticlesBatch(candidatesToAnalyze, site.persona);
+    let selectedIndices;
+    try {
+      selectedIndices = await filterBestArticlesBatch(candidatesToAnalyze, site.persona);
+    } catch (aiErr) {
+      console.error(`  ❌ Analyse IA échouée (tous providers KO) : ${aiErr.message} — site ${site.name} ignoré.`);
+      continue;
+    }
     console.log(`  ✅ L'IA a retenu ${selectedIndices.length} articles RSS pertinents.`);
 
     // 5. Finalisation Queue
