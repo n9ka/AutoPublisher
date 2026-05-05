@@ -1,0 +1,27 @@
+name: Recover Pending Manual Jobs
+on:
+  workflow_dispatch:
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Recover pending jobs
+        run: node src/recover-pending-manual.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: ${{ github.repository }}
