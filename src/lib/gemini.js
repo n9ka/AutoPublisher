@@ -264,12 +264,8 @@ async function filterBestArticlesBatch(articles, persona, preferredKeywords = ""
 
   try {
     return await runWithMultiProviderFallback(prompt, (text) => {
-      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      const firstBracket = text.indexOf('[');
-      const lastBracket = text.lastIndexOf(']');
-      if (firstBracket !== -1 && lastBracket !== -1) {
-        return JSON.parse(text.substring(firstBracket, lastBracket + 1));
-      }
+      const match = text.match(/\[\s*(?:\d+(?:\s*,\s*\d+)*)?\s*\]/);
+      if (match) return JSON.parse(match[0]);
       return [];
     }, label, { maxTokens: 64 });
   } catch (error) {
