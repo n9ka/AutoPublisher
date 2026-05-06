@@ -197,6 +197,7 @@ async function detect() {
 
   for (const site of sites) {
     console.log(`\n--- Site : ${site.name} ---`);
+    try {
 
     // --- Check AutoPilot SEO ---
     await checkAutoSeo(site);
@@ -313,6 +314,10 @@ async function detect() {
           addedCount++;
         }
       }
+    }
+
+    } catch (siteErr) {
+      console.error(`  ❌ [SITE ${site.name}] Erreur inattendue — site ignoré: ${siteErr?.message ?? String(siteErr)}`);
     }
   }
 

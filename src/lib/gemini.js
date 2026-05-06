@@ -8,11 +8,11 @@ try { MistralSDK = require('@mistralai/mistralai'); } catch (_) {}
 
 const API_KEYS = [
   process.env.GOOGLE_AI_API_KEY,
-  process.env.GOOGLE_AI_API_KEY_2
+  process.env.GOOGLE_AI_API_KEY_2,
+  process.env.GOOGLE_AI_API_KEY_3
 ].filter(Boolean);
 
-const GEMMA_PRIMARY = "gemma-3-27b-it"; // Temporaire : quotas Gemma 4 épuisés, retour Gemma 3 jusqu'au 30/04/2026
-const GEMMA_FALLBACK = "gemma-4-31b-it";
+const GEMMA_MODEL = "gemma-4-31b-it";
 
 const CEREBRAS_MODEL = "qwen-3-235b-a22b-instruct-2507";
 const MISTRAL_MODEL  = "mistral-small-latest";
@@ -47,7 +47,8 @@ async function runWithRetry(task, maxRetries = 2) {
         return await task(genAI);
       } catch (error) {
         lastError = error;
-        const isTransient = error.message.includes('503') || error.message.includes('overloaded') || error.message.includes('429');
+        const msg = error?.message ?? String(error);
+        const isTransient = msg.includes('503') || msg.includes('overloaded') || msg.includes('429');
 
         if (isTransient) {
           console.warn(`⚠️ Tentative ${attempt + 1} échouée avec la clé ${keyIndex + 1} (erreur transient). Retente...`);
@@ -63,38 +64,13 @@ async function runWithRetry(task, maxRetries = 2) {
   throw lastError;
 }
 
-/**
- * Exécute une tâche Gemma avec Gemma 3 en primaire.
- * Bascule sur Gemma 4 uniquement en cas de 429 (rate limit).
- */
 async function runGemmaWithFallback(buildTask, label) {
-  console.log(`🤖 [GEMMA-3] ${label} — modèle: ${GEMMA_PRIMARY}`);
-
-  try {
-    const result = await runWithRetry((genAI) => {
-      const model = genAI.getGenerativeModel({ model: GEMMA_PRIMARY });
-      return buildTask(model);
-    });
-    console.log(`✅ [GEMMA-3] ${label} — succès`);
-    return result;
-  } catch (error) {
-    const isRateLimit = error.message.includes('429')
-      || error.message.toLowerCase().includes('quota')
-      || error.message.toLowerCase().includes('rate limit');
-
-    if (isRateLimit) {
-      console.warn(`⚠️ [GEMMA FALLBACK] Rate limit sur Gemma 3 — bascule sur ${GEMMA_FALLBACK} pour: ${label}`);
-      const result = await runWithRetry((genAI) => {
-        const model = genAI.getGenerativeModel({ model: GEMMA_FALLBACK });
-        return buildTask(model);
-      });
-      console.log(`✅ [GEMMA-4 FALLBACK] ${label} — succès`);
-      return result;
-    }
-
-    console.error(`❌ [GEMMA-3] ${label} — erreur non-rate-limit: ${error.message}`);
-    throw error;
-  }
+  const result = await runWithRetry((genAI) => {
+    const model = genAI.getGenerativeModel({ model: GEMMA_MODEL });
+    return buildTask(model);
+  });
+  console.log(`✅ [GEMMA-4] ${label} — succès`);
+  return result;
 }
 
 // ── Cerebras ─────────────────────────────────────────────────────────────────
@@ -142,16 +118,18 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
   const { maxTokens = 64, temperature = 0.1 } = options;
   _stats.calls++;
 
-  // 1. Cerebras
+  // 1. Gemma (primary)
   try {
-    const text = await callCerebras(prompt, maxTokens, temperature);
-    _stats.cerebras++;
-    console.log(`✅ [CEREBRAS] ${label} — succès`);
+    const text = await runGemmaWithFallback(async (model) => {
+      const r = await model.generateContent(prompt);
+      return r.response.text().trim();
+    }, label);
+    _stats.gemma++;
     return parseResponse(text);
-  } catch (cerebrasErr) {
-    const reason = cerebrasErr.message.substring(0, 120);
-    _stats.fallbacks.push({ label, from: 'cerebras', reason });
-    console.warn(`⚠️ [MULTI-FALLBACK] Cerebras échoué pour "${label}" → Mistral | ${reason}`);
+  } catch (gemmaErr) {
+    const reason = (gemmaErr?.message ?? String(gemmaErr)).substring(0, 120);
+    _stats.fallbacks.push({ label, from: 'gemma', reason });
+    console.warn(`⚠️ [MULTI-FALLBACK] Gemma échoué pour "${label}" → Mistral | ${reason}`);
   }
 
   // 2. Mistral
@@ -161,24 +139,23 @@ async function runWithMultiProviderFallback(prompt, parseResponse, label, option
     console.log(`✅ [MISTRAL] ${label} — succès`);
     return parseResponse(text);
   } catch (mistralErr) {
-    const reason = mistralErr.message.substring(0, 120);
+    const reason = (mistralErr?.message ?? String(mistralErr)).substring(0, 120);
     _stats.fallbacks.push({ label, from: 'mistral', reason });
-    console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Gemma | ${reason}`);
+    console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Cerebras | ${reason}`);
   }
 
-  // 3. Gemma
+  // 3. Cerebras
   try {
-    const text = await runGemmaWithFallback(async (model) => {
-      const r = await model.generateContent(prompt);
-      return r.response.text().trim();
-    }, label);
-    _stats.gemma++;
+    const text = await callCerebras(prompt, maxTokens, temperature);
+    _stats.cerebras++;
+    console.log(`✅ [CEREBRAS] ${label} — succès`);
     return parseResponse(text);
-  } catch (gemmaErr) {
+  } catch (cerebrasErr) {
     _stats.errors++;
-    _stats.fallbacks.push({ label, from: 'gemma', reason: gemmaErr.message.substring(0, 120) });
+    const reason = (cerebrasErr?.message ?? String(cerebrasErr)).substring(0, 120);
+    _stats.fallbacks.push({ label, from: 'cerebras', reason });
     console.error(`❌ [TOUS PROVIDERS ÉCHOUÉS] ${label}`);
-    throw gemmaErr;
+    throw cerebrasErr;
   }
 }
 
