@@ -7,8 +7,6 @@ try { MistralSDK = require('@mistralai/mistralai'); } catch (_) {}
 // ── Google AI ────────────────────────────────────────────────────────────────
 
 const API_KEYS = [
-  process.env.GOOGLE_AI_API_KEY,
-  process.env.GOOGLE_AI_API_KEY_2,
   process.env.GOOGLE_AI_API_KEY_3
 ].filter(Boolean);
 
