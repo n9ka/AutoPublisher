@@ -43,7 +43,9 @@ async function runWithRetry(task, keys, maxRetries = 2) {
       } catch (error) {
         lastError = error;
         const msg = error?.message ?? String(error);
-        const isTransient = msg.includes('503') || msg.includes('overloaded') || msg.includes('429');
+        const isTransient = msg.includes('503') || msg.includes('overloaded') || msg.includes('429') ||
+                            msg.includes('canceled') || msg.includes('cancelled') ||
+                            msg.includes('ECONNRESET') || msg.includes('ETIMEDOUT') || msg.includes('timeout');
         if (isTransient) {
           await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
           continue;

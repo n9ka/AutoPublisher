@@ -1,4 +1,10 @@
 require('dotenv').config();
+
+// Empêche les rejections non gérées du SDK Google AI de crasher le process
+process.on('unhandledRejection', (reason) => {
+  console.warn('⚠️ [UnhandledRejection ignorée]', reason?.message ?? String(reason));
+});
+
 const { supabase } = require('./lib/supabase');
 const { fetchRSS } = require('./lib/rss');
 const { getEmbedding, filterBestArticlesBatch, getStats, resetStats } = require('./lib/gemini');
@@ -269,7 +275,7 @@ async function detect() {
     try {
       selectedIndices = await filterBestArticlesBatch(candidatesToAnalyze, site.persona);
     } catch (aiErr) {
-      console.error(`  ❌ Analyse IA échouée (tous providers KO) : ${aiErr.message} — site ${site.name} ignoré.`);
+      console.error(`  ❌ Analyse IA échouée (tous providers KO) : ${aiErr?.message ?? String(aiErr)} — site ${site.name} ignoré.`);
       continue;
     }
     console.log(`  ✅ L'IA a retenu ${selectedIndices.length} articles RSS pertinents.`);
