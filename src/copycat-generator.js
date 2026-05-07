@@ -258,7 +258,7 @@ async function runCopycatJob() {
     let aiOutput = await parseAiJson(rawOutput);
 
     const wp = aiOutput.wordpress || aiOutput;
-    let finalHtml = (wp.content || wp.html || '').replace(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi, '').trim();
+    let finalHtml = (wp.content || wp.html || '').replace(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi, '').replace(/\\n/g, '\n').trim();
 
     if (!finalHtml || finalHtml.length < 100) {
       throw new Error('Contenu généré vide ou trop court.');

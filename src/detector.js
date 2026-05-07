@@ -329,51 +329,28 @@ async function detect() {
 
 async function sendDetectionReport(addedArticles) {
   const stats = getStats();
-
-  // Ne rien envoyer si aucun appel IA et aucun article (run vide/silencieux)
   if (stats.calls === 0 && addedArticles.length === 0) return;
 
-  const lines = [];
-  lines.push('🔍 <b>Détection RSS — bilan</b>');
-  lines.push('');
+  const lines = ['🔍 <b>Détection RSS</b>'];
 
-  // Articles placés en pending
   if (addedArticles.length > 0) {
-    lines.push(`📥 <b>${addedArticles.length} article(s) ajouté(s) en pending</b>`);
-    for (const a of addedArticles) {
-      lines.push(`  • [${a.site}] ${a.title}`);
-    }
+    lines.push(`📥 ${addedArticles.length} article(s) → pending`);
+    for (const a of addedArticles) lines.push(`  • [${a.site}] ${a.title}`);
   } else {
-    lines.push('📭 Aucun article ajouté en pending.');
+    lines.push('📭 Aucun article ajouté.');
   }
 
-  // Stats IA
-  lines.push('');
-  lines.push('🤖 <b>Appels IA</b>');
-
-  if (stats.calls === 0) {
-    lines.push('  • Aucun appel effectué.');
-  } else {
+  if (stats.calls > 0) {
     const providers = [];
-    if (stats.gemma > 0)    providers.push(`Gemma: ${stats.gemma}`);
-    if (stats.cerebras > 0) providers.push(`Cerebras: ${stats.cerebras}`);
-    if (stats.mistral > 0)  providers.push(`Mistral: ${stats.mistral}`);
-    lines.push(`  • ${stats.calls} appel(s) — ${providers.join(', ') || 'aucun succès'}`);
-
-    if (stats.errors > 0) {
-      lines.push(`  ❌ ${stats.errors} appel(s) échoué(s) sur tous les providers`);
-    }
+    if (stats.gemma > 0)       providers.push(`Gemma:${stats.gemma}`);
+    if (stats.mistral > 0)     providers.push(`Mistral:${stats.mistral}`);
+    if (stats.openrouter > 0)  providers.push(`OR:${stats.openrouter}`);
+    if (stats.cerebras > 0)    providers.push(`Cerebras:${stats.cerebras}`);
+    lines.push(`🤖 ${stats.calls} appels — ${providers.join(', ') || 'aucun succès'}`);
   }
 
-  // Fallbacks déclenchés
-  if (stats.fallbacks.length > 0) {
-    lines.push('');
-    lines.push(`⚠️ <b>${stats.fallbacks.length} fallback(s) déclenchés</b>`);
-    for (const f of stats.fallbacks) {
-      const label = f.label.length > 50 ? f.label.substring(0, 50) + '…' : f.label;
-      lines.push(`  • [${f.from}] ${label}`);
-      lines.push(`    <i>${f.reason}</i>`);
-    }
+  if (stats.errors > 0) {
+    lines.push(`❌ ${stats.errors} filtrage(s) : tous providers KO`);
   }
 
   await sendTelegram(lines.join('\n'));

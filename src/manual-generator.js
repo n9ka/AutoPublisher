@@ -177,8 +177,11 @@ async function runManualJob() {
       console.log('  ✅ [EXPRESS] Génération terminée.');
 
       aiMetadata = aiOutput.wordpress || aiOutput.metadata;
-      finalHtml = aiMetadata.content || aiMetadata.html || aiOutput.content || aiOutput.html;
+      finalHtml = aiMetadata.html || aiMetadata.content || aiOutput.html || aiOutput.content;
     }
+
+    // Normalise les \n littéraux (double-escape IA) en vrais sauts de ligne
+    finalHtml = finalHtml.replace(/\\n/g, '\n');
 
     if (!finalHtml || finalHtml.trim().length < 100) {
       throw new Error('Contenu généré vide ou trop court — publication annulée.');

@@ -319,7 +319,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     // — matchait le premier { trouvé dans le HTML (ex: attribut Gutenberg {"className":"..."})
     // — sautait tout le contenu jusqu'au @context → effaçait l'article entier
     // FIX: cible uniquement les blocs <script type="application/ld+json"> (Claude, modèles modernes)
-    let finalHtml = (aiOutput.html || '').replace(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi, '').trim();
+    let finalHtml = (aiOutput.html || '').replace(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi, '').replace(/\\n/g, '\n').trim();
 
     if (!finalHtml || finalHtml.trim().length < 100) {
       throw new Error('Contenu généré vide ou trop court — publication annulée.');

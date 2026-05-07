@@ -53,7 +53,7 @@ Le champ "content" du JSON doit contenir UNIQUEMENT du HTML valide pour WordPres
 
 # CONSIGNES DE SÉCURITÉ JSON (CRITIQUE)
 - Réponds EXCLUSIVEMENT par l'objet JSON, sans aucun texte avant ou après.
-- Assure-toi que le JSON est valide. Ne pas insérer de retours à la ligne physiques dans les valeurs (utilise \\n).
+- Assure-toi que le JSON est valide. Le champ "content" est une chaîne JSON sur une seule ligne — sans saut de ligne visible dans la valeur.
 - Échappe correctement les guillemets et caractères spéciaux.
 - **TRONCATURE** : Si tu manques de place, termine impérativement par la fermeture du JSON (} ) même si l'article est écourté.
 
@@ -64,7 +64,7 @@ Réponds UNIQUEMENT avec ce JSON valide :
     "title": "Titre SEO captivant (mot-clé au début, 60 chars max)",
     "slug": "url-optimisee-kebab-case",
     "excerpt": "Résumé méta-description pour Google (150 chars max)",
-    "content": "LE CODE HTML GUTENBERG COMPLET",
+    "html": "LE CODE HTML GUTENBERG COMPLET",
     "keywords": "mot1, mot2, mot3",
     "image_generation_prompt": "${FEATURED_IMAGE_PROMPT_V2}"
   }

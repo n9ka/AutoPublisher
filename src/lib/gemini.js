@@ -4,41 +4,38 @@ let Cerebras, MistralSDK;
 try { Cerebras = require('@cerebras/cerebras_cloud_sdk'); } catch (_) {}
 try { MistralSDK = require('@mistralai/mistralai'); } catch (_) {}
 
-// ── Google AI ────────────────────────────────────────────────────────────────
+// ── Clés Google AI ───────────────────────────────────────────────────────────
 
-const API_KEYS = [
-  process.env.GOOGLE_AI_API_KEY_3
-].filter(Boolean);
+const API_KEYS_PRIMARY  = [process.env.GOOGLE_AI_API_KEY].filter(Boolean);
+const API_KEYS_FALLBACK = [process.env.GOOGLE_AI_API_KEY_2, process.env.GOOGLE_AI_API_KEY_3].filter(Boolean);
+const API_KEYS_ALL      = [...API_KEYS_PRIMARY, ...API_KEYS_FALLBACK];
 
-const GEMMA_MODEL = "gemma-4-31b-it";
+// ── Modèles ──────────────────────────────────────────────────────────────────
 
-const CEREBRAS_MODEL = "qwen-3-235b-a22b-instruct-2507";
-const MISTRAL_MODEL  = "mistral-small-latest";
+const GEMMA_MODEL      = "gemma-4-31b-it";
+const MISTRAL_MODEL    = "mistral-small-latest";
+const CEREBRAS_MODEL   = "gpt-oss-120b";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "meta-llama/llama-4-scout:free";
 
 // ── Stats tracking ───────────────────────────────────────────────────────────
 
-const _stats = { calls: 0, gemma: 0, cerebras: 0, mistral: 0, errors: 0, fallbacks: [] };
+const _stats = { calls: 0, gemma: 0, mistral: 0, openrouter: 0, cerebras: 0, errors: 0 };
 
-function getStats() {
-  return { ..._stats, fallbacks: [..._stats.fallbacks] };
-}
+function getStats() { return { ..._stats }; }
 
 function resetStats() {
-  _stats.calls = 0;
-  _stats.gemma = 0;
-  _stats.cerebras = 0;
-  _stats.mistral = 0;
-  _stats.errors = 0;
-  _stats.fallbacks = [];
+  _stats.calls = 0; _stats.gemma = 0; _stats.mistral = 0;
+  _stats.openrouter = 0; _stats.cerebras = 0; _stats.errors = 0;
 }
 
-// ── Gemma (Google AI) ────────────────────────────────────────────────────────
+// ── Google AI (Gemma) ────────────────────────────────────────────────────────
 
-async function runWithRetry(task, maxRetries = 2) {
+async function runWithRetry(task, keys, maxRetries = 2) {
+  if (!keys || keys.length === 0) throw new Error('Aucune clé Google AI disponible dans ce groupe');
   let lastError;
 
-  for (let keyIndex = 0; keyIndex < API_KEYS.length; keyIndex++) {
-    const genAI = new GoogleGenerativeAI(API_KEYS[keyIndex]);
+  for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+    const genAI = new GoogleGenerativeAI(keys[keyIndex]);
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -47,28 +44,66 @@ async function runWithRetry(task, maxRetries = 2) {
         lastError = error;
         const msg = error?.message ?? String(error);
         const isTransient = msg.includes('503') || msg.includes('overloaded') || msg.includes('429');
-
         if (isTransient) {
-          console.warn(`⚠️ Tentative ${attempt + 1} échouée avec la clé ${keyIndex + 1} (erreur transient). Retente...`);
           await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
           continue;
         }
         break;
       }
     }
-    console.warn(`🔄 Changement de clé API (clé ${keyIndex + 1} épuisée ou en erreur).`);
   }
-
-  throw lastError;
+  throw lastError ?? new Error('Toutes les clés Google AI ont échoué');
 }
 
-async function runGemmaWithFallback(buildTask, label) {
-  const result = await runWithRetry((genAI) => {
+async function callGemma(keys, prompt) {
+  return runWithRetry((genAI) => {
     const model = genAI.getGenerativeModel({ model: GEMMA_MODEL });
-    return buildTask(model);
+    return model.generateContent(prompt).then(r => r.response.text().trim());
+  }, keys);
+}
+
+// ── Mistral ──────────────────────────────────────────────────────────────────
+
+async function callMistral(prompt, maxTokens, temperature) {
+  if (!MistralSDK) throw new Error('SDK Mistral non installé');
+  const apiKey = process.env.MISTRAL_API_KEY;
+  if (!apiKey) throw new Error('MISTRAL_API_KEY non définie');
+
+  const client = new MistralSDK.Mistral({ apiKey });
+  const result = await client.chat.complete({
+    model: MISTRAL_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens,
+    temperature
   });
-  console.log(`✅ [GEMMA-4] ${label} — succès`);
-  return result;
+  return result.choices[0].message.content.trim();
+}
+
+// ── OpenRouter ───────────────────────────────────────────────────────────────
+
+async function callOpenRouter(prompt, maxTokens, temperature) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY non définie');
+
+  const axios = require('axios');
+  const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+    model: OPENROUTER_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: maxTokens,
+    temperature
+  }, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://aspy.fr',
+      'X-Title': 'Aspy'
+    },
+    timeout: 30000
+  });
+
+  const content = response.data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error('OpenRouter: réponse vide');
+  return content.trim();
 }
 
 // ── Cerebras ─────────────────────────────────────────────────────────────────
@@ -89,80 +124,57 @@ async function callCerebras(prompt, maxTokens, temperature) {
   return completion.choices[0].message.content.trim();
 }
 
-// ── Mistral ──────────────────────────────────────────────────────────────────
-
-async function callMistral(prompt, maxTokens, temperature) {
-  if (!MistralSDK) throw new Error('SDK Mistral non installé');
-  const apiKey = process.env.MISTRAL_API_KEY;
-  if (!apiKey) throw new Error('MISTRAL_API_KEY non définie');
-
-  const client = new MistralSDK.Mistral({ apiKey });
-  const result = await client.chat.complete({
-    model: MISTRAL_MODEL,
-    messages: [{ role: 'user', content: prompt }],
-    maxTokens,
-    temperature
-  });
-  return result.choices[0].message.content.trim();
-}
-
 // ── Multi-provider fallback ──────────────────────────────────────────────────
+// Ordre : Gemma(KEY_3) → Mistral → OpenRouter → Cerebras → Gemma(KEY_1+KEY_2)
 
-/**
- * Chaîne : Gemma 3 (→ Gemma 4 sur 429) → Cerebras → Mistral
- * parseResponse : fonction (text: string) => valeur métier
- */
 async function runWithMultiProviderFallback(prompt, parseResponse, label, options = {}) {
   const { maxTokens = 64, temperature = 0.1 } = options;
   _stats.calls++;
 
-  // 1. Gemma (primary)
-  try {
-    const text = await runGemmaWithFallback(async (model) => {
-      const r = await model.generateContent(prompt);
-      return r.response.text().trim();
-    }, label);
-    _stats.gemma++;
-    return parseResponse(text);
-  } catch (gemmaErr) {
-    const reason = (gemmaErr?.message ?? String(gemmaErr)).substring(0, 120);
-    _stats.fallbacks.push({ label, from: 'gemma', reason });
-    console.warn(`⚠️ [MULTI-FALLBACK] Gemma échoué pour "${label}" → Mistral | ${reason}`);
+  const attempt = async (fn) => {
+    try { return { ok: true, text: await fn() }; }
+    catch (e) { return { ok: false, err: e?.message ?? String(e) }; }
+  };
+
+  // 1. Gemma KEY_3 (primaire)
+  if (API_KEYS_PRIMARY.length > 0) {
+    const r = await attempt(() => callGemma(API_KEYS_PRIMARY, prompt));
+    if (r.ok) { _stats.gemma++; return parseResponse(r.text); }
   }
 
   // 2. Mistral
-  try {
-    const text = await callMistral(prompt, maxTokens, temperature);
-    _stats.mistral++;
-    console.log(`✅ [MISTRAL] ${label} — succès`);
-    return parseResponse(text);
-  } catch (mistralErr) {
-    const reason = (mistralErr?.message ?? String(mistralErr)).substring(0, 120);
-    _stats.fallbacks.push({ label, from: 'mistral', reason });
-    console.warn(`⚠️ [MULTI-FALLBACK] Mistral échoué pour "${label}" → Cerebras | ${reason}`);
+  const rm = await attempt(() => callMistral(prompt, maxTokens, temperature));
+  if (rm.ok) { _stats.mistral++; console.log(`✅ [MISTRAL] ${label}`); return parseResponse(rm.text); }
+
+  // 3. OpenRouter
+  const ro = await attempt(() => callOpenRouter(prompt, maxTokens, temperature));
+  if (ro.ok) { _stats.openrouter++; console.log(`✅ [OPENROUTER] ${label}`); return parseResponse(ro.text); }
+
+  // 4. Cerebras
+  const rc = await attempt(() => callCerebras(prompt, maxTokens, temperature));
+  if (rc.ok) { _stats.cerebras++; console.log(`✅ [CEREBRAS] ${label}`); return parseResponse(rc.text); }
+
+  // 5. Gemma KEY_1 + KEY_2 (dernier recours free tier)
+  if (API_KEYS_FALLBACK.length > 0) {
+    const rg = await attempt(() => callGemma(API_KEYS_FALLBACK, prompt));
+    if (rg.ok) { _stats.gemma++; console.log(`✅ [GEMMA-FALLBACK] ${label}`); return parseResponse(rg.text); }
   }
 
-  // 3. Cerebras
-  try {
-    const text = await callCerebras(prompt, maxTokens, temperature);
-    _stats.cerebras++;
-    console.log(`✅ [CEREBRAS] ${label} — succès`);
-    return parseResponse(text);
-  } catch (cerebrasErr) {
-    _stats.errors++;
-    const reason = (cerebrasErr?.message ?? String(cerebrasErr)).substring(0, 120);
-    _stats.fallbacks.push({ label, from: 'cerebras', reason });
-    console.error(`❌ [TOUS PROVIDERS ÉCHOUÉS] ${label}`);
-    throw cerebrasErr;
-  }
+  _stats.errors++;
+  console.error(`❌ [TOUS PROVIDERS ÉCHOUÉS] ${label}`);
+  throw new Error(`Tous les providers IA ont échoué : ${label}`);
 }
 
-// ── Embedding (Google uniquement, pas de fallback alternatif) ────────────────
+// ── Embedding (Google uniquement) ────────────────────────────────────────────
 
 async function getEmbedding(text) {
   if (!text) return null;
-  const cleanText = text.substring(0, 9000);
+  if (API_KEYS_ALL.length === 0) {
+    console.error('❌ Embedding impossible : aucune clé Google AI configurée');
+    return null;
+  }
 
+  const cleanText = text.substring(0, 9000);
   try {
     return await runWithRetry(async (genAI) => {
       const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
@@ -171,9 +183,9 @@ async function getEmbedding(text) {
         outputDimensionality: 768
       });
       return result.embedding.values;
-    });
+    }, API_KEYS_ALL);
   } catch (error) {
-    console.error('❌ Échec définitif embedding:', error.message);
+    console.error('❌ Échec définitif embedding:', error?.message ?? String(error));
     return null;
   }
 }
@@ -218,7 +230,7 @@ async function classifyArticle(title, excerpt, categories) {
       return (id && validIds.has(id)) ? id : fallbackCat.id;
     }, label, { maxTokens: 16 });
   } catch (error) {
-    console.error('❌ Échec définitif classification:', error.message);
+    console.error('❌ Échec définitif classification:', error?.message ?? String(error));
     return fallbackCat.id;
   }
 }
@@ -269,7 +281,7 @@ async function filterBestArticlesBatch(articles, persona, preferredKeywords = ""
       return [];
     }, label, { maxTokens: 64 });
   } catch (error) {
-    console.error('❌ Échec définitif filtrage batch:', error.message);
+    console.error('❌ Échec définitif filtrage batch:', error?.message ?? String(error));
     return [];
   }
 }
