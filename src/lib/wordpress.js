@@ -33,6 +33,10 @@ function getHeaders(baseUrl, auth = null, contentType = 'application/json', brid
   return headers;
 }
 
+function toPublicLink(link, isHeadless) {
+  return isHeadless && link ? link.replace('://cms.', '://') : link;
+}
+
 /**
  * Télécharge une image depuis une URL et l'upload sur WordPress
  */
@@ -211,6 +215,7 @@ async function publishPost(siteConfig, postData) {
       }
     }
 
+    result.link = toPublicLink(result.link, !!siteConfig.is_headless);
     return result;
   } catch (primaryError) {
     const status = primaryError._httpStatus || 0;
@@ -222,7 +227,9 @@ async function publishPost(siteConfig, postData) {
     if (shouldFallback) {
       const direction = primaryIsBridge ? 'BRIDGE→REST' : 'REST→BRIDGE';
       console.log(`  ⚡ Fallback [${direction}] (HTTP ${status})...`);
-      return await _doPublish(baseUrl, siteConfig, postData, !primaryIsBridge);
+      const fallback = await _doPublish(baseUrl, siteConfig, postData, !primaryIsBridge);
+      fallback.link = toPublicLink(fallback.link, !!siteConfig.is_headless);
+      return fallback;
     }
 
     // Pas de fallback possible : messages d'erreur enrichis
