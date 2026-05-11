@@ -14,7 +14,7 @@ const API_KEYS_ALL      = [...API_KEYS_PRIMARY, ...API_KEYS_FALLBACK];
 
 const GEMMA_MODEL      = "gemma-4-31b-it";
 const MISTRAL_MODEL    = "mistral-small-latest";
-const CEREBRAS_MODEL   = "gpt-oss-120b";
+const CEREBRAS_MODEL   = "llama3.1-8b";
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "meta-llama/llama-4-scout:free";
 
 // ── Stats tracking ───────────────────────────────────────────────────────────
@@ -228,8 +228,8 @@ async function classifyArticle(title, excerpt, categories) {
 
   try {
     return await runWithMultiProviderFallback(prompt, (text) => {
-      const id = parseInt(text.match(/\d+/)?.[0]);
-      return (id && validIds.has(id)) ? id : fallbackCat.id;
+      const matches = (text.match(/\d+/g) || []).map(Number).filter(n => validIds.has(n));
+      return matches[matches.length - 1] ?? fallbackCat.id;
     }, label, { maxTokens: 16 });
   } catch (error) {
     console.error('❌ Échec définitif classification:', error?.message ?? String(error));
