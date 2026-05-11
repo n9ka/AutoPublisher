@@ -117,6 +117,7 @@ async function checkAutoSeo(site) {
       infographic_model: backlogItem.infographic_model || site.auto_seo_infographic_style || 'banana',
       custom_status: site.auto_seo_status || 'draft',
       custom_options: backlogItem.custom_options || site.auto_custom_config || null,
+      request_indexing: site.auto_indexing_enabled || false,
       status: 'pending',
       created_at: new Date()
     })

@@ -17,6 +17,7 @@ const { sendTelegram } = require('./lib/telegram');
 const { CUSTOM_ANALYST_PROMPT } = require('./prompts/custom-analyst');
 const { CUSTOM_WRITER_PROMPT } = require('./prompts/custom-writer');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
+const { submitUrl } = require('./lib/indexer');
 
 // Coûts fixes par composant (crédits)
 const FIXED_COSTS = {
@@ -500,6 +501,20 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     }).eq('id', jobId);
 
     await enqueueSocialPost(site.id, jobId, 'seo', job.scheduled_at);
+
+    if (job.request_indexing) {
+      try {
+        await spendCredit(site.user_id, 1, jobId);
+        const taskId = await submitUrl(pubResult.link, aiOutput.metadata.title);
+        await supabase.from('articles_queue').update({
+          indexer_task_id: taskId,
+          indexer_submitted_at: new Date(),
+        }).eq('id', jobId);
+        console.log(`  [Indexer] Soumis : ${pubResult.link} → task_id=${taskId}`);
+      } catch (err) {
+        console.error(`  [Indexer] Erreur (non-bloquant) : ${err.message}`);
+      }
+    }
 
     if (pubResult.id) {
       await upsertToWpCache({
