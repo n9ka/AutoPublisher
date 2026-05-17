@@ -88,6 +88,31 @@ const TOOLS = [
     },
   },
   {
+    name: 'get_wp_categories',
+    description: 'Récupère la liste des catégories WordPress d\'un site. À appeler avant de publier pour choisir la bonne rubrique — Gemini classe lui-même en connaissant l\'article.',
+    inputSchema: {
+      type: 'object',
+      required: ['site'],
+      properties: {
+        site: { type: 'string', description: 'Domaine ou fragment du site (ex: "cafel" ou "cafel.fr")' },
+      },
+    },
+  },
+  {
+    name: 'log_published',
+    description: 'Enregistre un article publié dans Supabase (processed_articles) et génère son embedding sémantique. À appeler après vps-publisher.js pour activer la déduplication future.',
+    inputSchema: {
+      type: 'object',
+      required: ['site', 'title'],
+      properties: {
+        site: { type: 'string', description: 'Domaine ou fragment du site' },
+        title: { type: 'string', description: 'Titre de l\'article publié' },
+        wp_post_id: { type: 'number', description: 'ID WordPress du post (retourné par vps-publisher.js)' },
+        wp_url: { type: 'string', description: 'URL complète de l\'article publié' },
+      },
+    },
+  },
+  {
     name: 'publish_article',
     description: 'Publie un article sur WordPress via Aspy.fr. Aspy.fr gère la classification de rubrique, l\'image (Pexels) et la publication WP.',
     inputSchema: {
@@ -153,6 +178,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       }
 
+      case 'get_wp_categories': {
+        const data = await api('GET', '/api/vps/categories', { params: { site: args.site } });
+        if (data.categories.length === 0) {
+          text = `Aucune catégorie trouvée sur ${data.site}.`;
+        } else {
+          const lines = data.categories.map(c => {
+            const parentCat = c.parent ? data.categories.find(p => p.id === c.parent) : null;
+            const fullName = parentCat ? `${parentCat.name} > ${c.name}` : c.name;
+            return `• ID ${c.id} — ${fullName} (${c.count} articles)`;
+          });
+          text = `${data.categories.length} catégories sur ${data.site} :\n\n${lines.join('\n')}\n\nChoisir l'ID le plus pertinent pour l'article, puis passer --category=ID à vps-publisher.js.`;
+        }
+        break;
+      }
+
+      case 'log_published': {
+        const data = await api('POST', '/api/vps/log-published', {
+          body: {
+            site: args.site,
+            title: args.title,
+            wp_post_id: args.wp_post_id ?? undefined,
+            wp_url: args.wp_url ?? undefined,
+          },
+        });
+        text = `✅ Article enregistré dans Supabase.\nEmbedding : ${data.has_embedding ? '✓ généré et stocké' : '✗ non généré (clé API manquante?)'}`;
+        break;
+      }
+
       case 'get_site_config': {
         const data = await api('GET', '/api/vps/site-config', { params: { site: args.site } });
         // Ne pas exposer le mot de passe en clair dans la réponse texte
@@ -177,7 +230,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             imageUrl: args.image_url ?? undefined,
           },
         });
-        text = `✅ Article ${data.status === 'future' ? 'planifié' : args.status === 'publish' ? 'publié' : 'enregistré en brouillon'} !\n\nLien : ${data.link}\nPost ID : ${data.post_id}\nRubrique ID : ${data.category_id ?? 'non classé'}\nImage : ${data.has_image ? '✓ uploadée' : '✗ aucune'}`;
+        const statusLabel = data.status === 'future' ? 'planifié' : args.status === 'publish' ? 'publié' : 'enregistré en brouillon'
+        const lines = [
+          `✅ Article ${statusLabel} !`,
+          ``,
+          `Lien : ${data.link}`,
+          `Post ID : ${data.post_id}`,
+          `Rubrique ID : ${data.category_id ?? '— non classé (classification échouée)'}`,
+          `Image : ${data.has_image ? '✓ uploadée' : '✗ aucune'}`,
+          `Embedding : ${data.has_embedding ? (data.embedding_stored ? '✓ stocké' : '⚠ généré mais non stocké') : '✗ non généré'}`,
+        ]
+        if (data.category_warning) lines.push(`⚠ Catégorie : ${data.category_warning}`)
+        text = lines.join('\n')
         break;
       }
 
