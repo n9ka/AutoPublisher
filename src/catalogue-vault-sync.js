@@ -48,6 +48,9 @@ function buildFrontmatter(site, slug) {
     `description: ${site.description ? `"${site.description.replace(/"/g, '\\"')}"` : '""'}`,
     `thematiques:`,
     ...(site.thematiques || []).map(t => `  - ${t}`),
+    ...(site.languages && site.languages.length > 0
+      ? [`languages:`, ...site.languages.map(l => `  - ${l}`)]
+      : [`languages: []`]),
     `active: true`,
     `include_global: ${site.include_global ?? false}`,
     ``,
@@ -94,6 +97,7 @@ function buildSiteContent(site, slug) {
 # ${site.title || site.url}
 
 **Domaine :** ${site.url}
+**Langue(s) :** ${(site.languages && site.languages.length > 0) ? site.languages.join(' · ') : '—'}
 **Thématiques :** ${(site.thematiques || []).join(' · ') || '—'}
 
 ## Tarifs
@@ -135,7 +139,8 @@ function buildIndex(allSites, totalSites) {
     const domain = (s.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
     const tf = s.majestic?.mj_trust_flow ?? '—'
     const themes = (s.thematiques || []).join(', ') || '—'
-    return `- ${domain} · ${s.price_with_redaction}€ · TF ${tf} · ${themes}`
+    const langs = (s.languages && s.languages.length > 0) ? ` · ${s.languages.join('/')}` : ''
+    return `- ${domain} · ${s.price_with_redaction}€ · TF ${tf}${langs} · ${themes}`
   }).join('\n')
 
   return `---
