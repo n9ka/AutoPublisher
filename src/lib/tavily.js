@@ -84,6 +84,23 @@ async function selectApiKey() {
     return cachedSelection;
   }
 
+  // Mode simplifié :
+  // - on utilise toujours la clé primaire ;
+  // - on ne fait plus d'appel automatique à /usage ;
+  // - la clé fallback reste configurée mais n'est plus sélectionnée
+  //   automatiquement en fonction du quota.
+  //
+  // Pour revenir à l'ancien comportement de rotation auto en fin de mois,
+  // restaurer le bloc ci-dessous et retirer ce retour anticipé.
+  cachedSelection = {
+    apiKey: primary,
+    source: 'primary',
+    reason: 'primary_forced_manual_rotation',
+    monthKey,
+  };
+  return cachedSelection;
+
+  /*
   if (!fallback) {
     cachedSelection = {
       apiKey: primary,
@@ -128,6 +145,7 @@ async function selectApiKey() {
     };
     return cachedSelection;
   }
+  */
 }
 
 async function callTavily(endpoint, payload, actionLabel) {
