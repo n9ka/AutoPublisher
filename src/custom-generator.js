@@ -133,6 +133,9 @@ async function runCustomJob() {
     process.exit(1);
   }
 
+  if (process.env.RUNNER_PUBLIC_IP) {
+    console.log(`🌍 Runner public IP: ${process.env.RUNNER_PUBLIC_IP}`);
+  }
   console.log(`🚀 [CUSTOM] Démarrage du Job: ${jobId}`);
 
   // Chargement du job

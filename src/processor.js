@@ -17,6 +17,9 @@ const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
 
 async function processNextArticle() {
+  if (process.env.RUNNER_PUBLIC_IP) {
+    console.log(`🌍 Runner public IP: ${process.env.RUNNER_PUBLIC_IP}`);
+  }
   console.log('⚙️  Recherche d\'un article en attente...');
 
   const { data: queueItem, error: queueError } = await supabase

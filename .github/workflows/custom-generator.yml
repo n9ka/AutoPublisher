@@ -22,9 +22,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Capture runner public IP
+        shell: bash
+        run: |
+          RUNNER_PUBLIC_IP="$(curl -4 -fsS https://api.ipify.org || curl -4 -fsS https://ifconfig.me || echo unknown)"
+          echo "RUNNER_PUBLIC_IP=$RUNNER_PUBLIC_IP" >> "$GITHUB_ENV"
+          echo "Runner public IP: $RUNNER_PUBLIC_IP"
+
       - name: Run Custom Generator
         run: node src/custom-generator.js ${{ github.event.inputs.job_id }}
         env:
+          RUNNER_PUBLIC_IP: ${{ env.RUNNER_PUBLIC_IP }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}

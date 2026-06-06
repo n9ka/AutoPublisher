@@ -27,6 +27,9 @@ async function runManualJob() {
     process.exit(1);
   }
 
+  if (process.env.RUNNER_PUBLIC_IP) {
+    console.log(`🌍 Runner public IP: ${process.env.RUNNER_PUBLIC_IP}`);
+  }
   console.log(`🚀 Démarrage du Job Manuel: ${jobId}`);
 
   const { data: job, error: jobError } = await supabase

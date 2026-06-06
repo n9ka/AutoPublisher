@@ -1,5 +1,9 @@
 const axios = require('axios');
 
+function getRunnerContext() {
+  return process.env.RUNNER_PUBLIC_IP ? ` | runner_ip=${process.env.RUNNER_PUBLIC_IP}` : '';
+}
+
 /**
  * Génère des headers "humains" ultra-récents pour contourner les WAF (BitNinja 453, Imunify, Cloudflare, etc.)
  */
@@ -88,7 +92,7 @@ async function uploadImageToWordPress(wpUrl, wpUser, wpPassword, imageUrl, altTe
 
   } catch (error) {
     const status = error.response ? error.response.status : 0;
-    console.error(`Erreur upload image WP: HTTP ${status}`);
+    console.error(`Erreur upload image WP: HTTP ${status} | endpoint=${baseUrl}/wp-json/wp/v2/media${getRunnerContext()}`);
     // Mode Bridge : déléguer le sideload au plugin
     if (isBridgeMode) {
       console.log('  🛡️  REST bloqué pour l\'image, délégation au Bridge...');
@@ -172,7 +176,7 @@ async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
   } catch (error) {
     const errorData = error.response ? error.response.data : error.message;
     const status = error._httpStatus || (error.response ? error.response.status : 0);
-    console.error(`Erreur publication WP (${useBridge ? 'BRIDGE' : 'REST'}):`, status);
+    console.error(`Erreur publication WP (${useBridge ? 'BRIDGE' : 'REST'}): ${status} | endpoint=${targetUrl}${getRunnerContext()}`);
 
     const err = new Error(typeof errorData === 'object' ? JSON.stringify(errorData) : (errorData || error.message));
     err._httpStatus = status;
