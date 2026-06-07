@@ -14,6 +14,9 @@ function getPool() {
     pool = new Pool({
       connectionString: process.env.PUBLISH_CACHE_DATABASE_URL,
       ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 10000,
+      max: 3,
     });
   }
   return pool;
@@ -24,124 +27,149 @@ function sanitizePayload(payload) {
 }
 
 async function savePublishPayload({ jobId, sourceKind, site, payload }) {
-  const db = getPool();
-  if (!db) return false;
+  try {
+    const db = getPool();
+    if (!db) return false;
 
-  const query = `
-    insert into publish_retry_cache (
-      job_id,
-      source_kind,
-      wordpress_site_id,
-      site_url,
-      site_name,
-      payload,
-      publish_status,
-      updated_at
-    ) values ($1, $2, $3, $4, $5, $6::jsonb, 'pending', now())
-    on conflict (job_id)
-    do update set
-      source_kind = excluded.source_kind,
-      wordpress_site_id = excluded.wordpress_site_id,
-      site_url = excluded.site_url,
-      site_name = excluded.site_name,
-      payload = excluded.payload,
-      publish_status = 'pending',
-      updated_at = now(),
-      last_error = null
-  `;
+    const query = `
+      insert into publish_retry_cache (
+        job_id,
+        source_kind,
+        wordpress_site_id,
+        site_url,
+        site_name,
+        payload,
+        publish_status,
+        updated_at
+      ) values ($1, $2, $3, $4, $5, $6::jsonb, 'pending', now())
+      on conflict (job_id)
+      do update set
+        source_kind = excluded.source_kind,
+        wordpress_site_id = excluded.wordpress_site_id,
+        site_url = excluded.site_url,
+        site_name = excluded.site_name,
+        payload = excluded.payload,
+        publish_status = 'pending',
+        updated_at = now(),
+        last_error = null
+    `;
 
-  await db.query(query, [
-    jobId,
-    sourceKind,
-    site.id,
-    site.url || site.wp_url,
-    site.name || null,
-    JSON.stringify(sanitizePayload(payload)),
-  ]);
+    await db.query(query, [
+      jobId,
+      sourceKind,
+      site.id,
+      site.url || site.wp_url,
+      site.name || null,
+      JSON.stringify(sanitizePayload(payload)),
+    ]);
 
-  return true;
+    return true;
+  } catch (error) {
+    console.warn(`  [publish-cache] sauvegarde ignorée : ${error.message}`);
+    return false;
+  }
 }
 
 async function markPublishFailed(jobId, errorMessage) {
-  const db = getPool();
-  if (!db) return false;
+  try {
+    const db = getPool();
+    if (!db) return false;
 
-  await db.query(
-    `
-      update publish_retry_cache
-      set publish_status = 'failed',
-          attempts = attempts + 1,
-          last_error = $2,
-          updated_at = now()
-      where job_id = $1
-    `,
-    [jobId, errorMessage || null]
-  );
+    await db.query(
+      `
+        update publish_retry_cache
+        set publish_status = 'failed',
+            attempts = attempts + 1,
+            last_error = $2,
+            updated_at = now()
+        where job_id = $1
+      `,
+      [jobId, errorMessage || null]
+    );
 
-  return true;
+    return true;
+  } catch (error) {
+    console.warn(`  [publish-cache] marquage failed ignoré : ${error.message}`);
+    return false;
+  }
 }
 
 async function markPublishSucceeded(jobId, publishedUrl = null) {
-  const db = getPool();
-  if (!db) return false;
+  try {
+    const db = getPool();
+    if (!db) return false;
 
-  await db.query(
-    `
-      update publish_retry_cache
-      set publish_status = 'published',
-          published_url = $2,
-          updated_at = now()
-      where job_id = $1
-    `,
-    [jobId, publishedUrl]
-  );
+    await db.query(
+      `
+        update publish_retry_cache
+        set publish_status = 'published',
+            published_url = $2,
+            updated_at = now()
+        where job_id = $1
+      `,
+      [jobId, publishedUrl]
+    );
 
-  return true;
+    return true;
+  } catch (error) {
+    console.warn(`  [publish-cache] marquage published ignoré : ${error.message}`);
+    return false;
+  }
 }
 
 async function getPublishPayload(jobId) {
-  const db = getPool();
-  if (!db) return null;
+  try {
+    const db = getPool();
+    if (!db) return null;
 
-  const { rows } = await db.query(
-    `
-      select *
-      from publish_retry_cache
-      where job_id = $1
-      limit 1
-    `,
-    [jobId]
-  );
+    const { rows } = await db.query(
+      `
+        select *
+        from publish_retry_cache
+        where job_id = $1
+        limit 1
+      `,
+      [jobId]
+    );
 
-  return rows[0] || null;
+    return rows[0] || null;
+  } catch (error) {
+    console.warn(`[publish-cache] lecture job ignorée : ${error.message}`);
+    return null;
+  }
 }
 
 async function listPublishPayloads({ status = null, limit = 20 } = {}) {
-  const db = getPool();
-  if (!db) return [];
+  try {
+    const db = getPool();
+    if (!db) return [];
 
-  const params = [];
-  let where = '';
+    const params = [];
+    let where = '';
 
-  if (status) {
-    params.push(status);
-    where = `where publish_status = $${params.length}`;
+    if (status) {
+      params.push(status);
+      where = `where publish_status = $${params.length}`;
+    }
+
+    params.push(limit);
+
+    const { rows } = await db.query(
+      `
+        select *
+        from publish_retry_cache
+        ${where}
+        order by updated_at desc
+        limit $${params.length}
+      `,
+      params
+    );
+
+    return rows;
+  } catch (error) {
+    console.warn(`[publish-cache] listing ignoré : ${error.message}`);
+    return [];
   }
-
-  params.push(limit);
-
-  const { rows } = await db.query(
-    `
-      select *
-      from publish_retry_cache
-      ${where}
-      order by updated_at desc
-      limit $${params.length}
-    `,
-    params
-  );
-
-  return rows;
 }
 
 module.exports = {
