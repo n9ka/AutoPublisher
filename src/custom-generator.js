@@ -18,6 +18,7 @@ const { CUSTOM_ANALYST_PROMPT } = require('./prompts/custom-analyst');
 const { CUSTOM_WRITER_PROMPT } = require('./prompts/custom-writer');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 const { submitUrl } = require('./lib/indexer');
+const { savePublishPayload, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./lib/publish-cache');
 
 // Coûts fixes par composant (crédits)
 const FIXED_COSTS = {
@@ -480,7 +481,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       site.connection_mode, site.bridge_key
     );
 
-    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, {
+    const publishPayload = {
       title: aiOutput.metadata.title,
       content: finalHtml,
       excerpt: aiOutput.metadata.excerpt,
@@ -494,7 +495,23 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       infographic_url: infographicUrl || null,
       infographic_alt: infographicUrl ? infographicAlt : null,
       section_image_urls: sectionImageReplaceMap.length > 0 ? sectionImageReplaceMap : undefined,
-    });
+    };
+
+    if (isPublishCacheEnabled()) {
+      await savePublishPayload({
+        jobId,
+        sourceKind: 'custom',
+        site,
+        payload: publishPayload,
+      });
+      console.log('  🗂️  Payload de publication sauvegardé dans le cache de retry.');
+    }
+
+    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, publishPayload);
+
+    if (isPublishCacheEnabled()) {
+      await markPublishSucceeded(jobId, pubResult.link);
+    }
 
     await supabase.from('articles_queue').update({
       status: 'published',
@@ -540,6 +557,9 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
   } catch (error) {
     console.error(`❌ [CUSTOM] Erreur : ${error.message}`);
     if (creditsSpent > 0) await refundCredit(site.user_id, creditsSpent, jobId);
+    if (isPublishCacheEnabled()) {
+      await markPublishFailed(jobId, error.message);
+    }
     await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
     await sendTelegram(`❌ <b>[SEO CUSTOM]</b> Échec\n• ${job?.source_title || jobId}\n• ${site?.name || '?'}\n└ ${error.message}`);
     process.exit(1);

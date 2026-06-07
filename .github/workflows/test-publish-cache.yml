@@ -1,0 +1,26 @@
+name: Test Publish Cache
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test Neon publish cache
+        run: node src/test-publish-cache.js
+        env:
+          PUBLISH_CACHE_DATABASE_URL: ${{ secrets.PUBLISH_CACHE_DATABASE_URL }}
