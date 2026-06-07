@@ -1,77 +1,78 @@
 require('dotenv').config();
-const { Pool } = require('pg');
+const {
+  isPublishCacheEnabled,
+  savePublishPayload,
+  markPublishFailed,
+  markPublishSucceeded,
+  getPublishPayload,
+  listPublishPayloads,
+} = require('./lib/publish-cache');
 
 async function main() {
-  const connectionString = process.env.PUBLISH_CACHE_DATABASE_URL;
-  if (!connectionString) {
-    throw new Error('PUBLISH_CACHE_DATABASE_URL manquante');
+  if (!isPublishCacheEnabled()) {
+    throw new Error('Publish cache désactivé ou PUBLISH_CACHE_DATABASE_URL manquante');
   }
 
-  const pool = new Pool({
-    connectionString,
-    ssl: { rejectUnauthorized: false },
+  const testJobId = '00000000-0000-0000-0000-000000000001';
+  const payload = {
+    title: 'Test publish cache',
+    content: '<p>Test payload</p>',
+    slug: 'test-publish-cache',
+    created_by: 'github-actions',
+    _retry_meta: {
+      credits_to_charge: 0,
+      request_indexing: false,
+    },
+  };
+
+  const site = {
+    id: testJobId,
+    url: 'https://example.com',
+    name: 'Test Site',
+  };
+
+  console.log('🔌 Publish cache activé');
+
+  const saved = await savePublishPayload({
+    jobId: testJobId,
+    sourceKind: 'test',
+    site,
+    payload,
   });
+  console.log(`✅ savePublishPayload: ${saved}`);
 
-  const client = await pool.connect();
+  const fetchedAfterSave = await getPublishPayload(testJobId);
+  console.log('📦 Après save :');
+  console.log(JSON.stringify({
+    job_id: fetchedAfterSave?.job_id,
+    source_kind: fetchedAfterSave?.source_kind,
+    site_url: fetchedAfterSave?.site_url,
+    publish_status: fetchedAfterSave?.publish_status,
+  }, null, 2));
 
-  try {
-    const testJobId = '00000000-0000-0000-0000-000000000001';
-    const payload = {
-      title: 'Test publish cache',
-      content: '<p>Test payload</p>',
-      slug: 'test-publish-cache',
-      created_by: 'github-actions',
-    };
+  const failed = await markPublishFailed(testJobId, 'test failure');
+  console.log(`✅ markPublishFailed: ${failed}`);
 
-    console.log('🔌 Connexion Neon OK');
+  const fetchedAfterFailed = await getPublishPayload(testJobId);
+  console.log('📦 Après mark failed :');
+  console.log(JSON.stringify({
+    publish_status: fetchedAfterFailed?.publish_status,
+    attempts: fetchedAfterFailed?.attempts,
+    last_error: fetchedAfterFailed?.last_error,
+  }, null, 2));
 
-    await client.query(
-      `
-        insert into publish_retry_cache (
-          job_id,
-          source_kind,
-          wordpress_site_id,
-          site_url,
-          site_name,
-          payload,
-          publish_status,
-          updated_at
-        ) values ($1, $2, $3, $4, $5, $6::jsonb, 'pending', now())
-        on conflict (job_id)
-        do update set
-          payload = excluded.payload,
-          updated_at = now(),
-          publish_status = 'pending',
-          last_error = null
-      `,
-      [
-        testJobId,
-        'test',
-        testJobId,
-        'https://example.com',
-        'Test Site',
-        JSON.stringify(payload),
-      ]
-    );
+  const published = await markPublishSucceeded(testJobId, 'https://example.com/test-publish-cache');
+  console.log(`✅ markPublishSucceeded: ${published}`);
 
-    console.log('✅ Insert / upsert OK');
+  const fetchedAfterPublished = await getPublishPayload(testJobId);
+  console.log('📦 Après mark published :');
+  console.log(JSON.stringify({
+    publish_status: fetchedAfterPublished?.publish_status,
+    published_url: fetchedAfterPublished?.published_url,
+  }, null, 2));
 
-    const { rows } = await client.query(
-      `
-        select job_id, source_kind, site_url, publish_status, created_at, updated_at
-        from publish_retry_cache
-        where job_id = $1
-        limit 1
-      `,
-      [testJobId]
-    );
-
-    console.log('📦 Ligne récupérée :');
-    console.log(JSON.stringify(rows[0], null, 2));
-  } finally {
-    client.release();
-    await pool.end();
-  }
+  const listed = await listPublishPayloads({ limit: 5 });
+  console.log(`📚 listPublishPayloads: ${listed.length} ligne(s)`);
 }
 
 main().catch((error) => {
