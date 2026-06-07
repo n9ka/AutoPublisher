@@ -34,6 +34,8 @@ jobs:
         env:
           RUNNER_PUBLIC_IP: ${{ env.RUNNER_PUBLIC_IP }}
           WP_HEADER_PROFILE: ${{ vars.WP_HEADER_PROFILE || 'default' }}
+          PUBLISH_CACHE_DATABASE_URL: ${{ secrets.PUBLISH_CACHE_DATABASE_URL }}
+          PUBLISH_CACHE_ENABLED: ${{ vars.PUBLISH_CACHE_ENABLED || 'true' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
