@@ -16,10 +16,15 @@ function getHeaders(baseUrl, auth = null, contentType = 'application/json', brid
 
   const headers = profile === 'safe'
     ? {
-        // Profil de test plus sobre pour les hebergeurs qui semblent
-        // reagir negativement aux faux headers navigateur.
-        'User-Agent': 'AspyPublisher/1.0',
-        'Accept': 'application/json'
+        // Profil de test plus prudent :
+        // on conserve les headers generiques utiles a la negotiation HTTP,
+        // mais on retire ceux qui emulent trop fortement un navigateur.
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       }
     : {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
