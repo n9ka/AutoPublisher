@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { decrypt } = require('./lib/encryption');
-const { publishPost } = require('./lib/wordpress');
+const { publishPost, uploadImageToWordPress } = require('./lib/wordpress');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { upsertToWpCache } = require('./lib/supabase-data');
 const { getPublishPayload, listPublishPayloads, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./lib/publish-cache');
@@ -135,6 +135,29 @@ async function retryOne(row) {
     if (creditsToCharge > 0) {
       await spendCredit(site.user_id, creditsToCharge, row.job_id);
       console.log(`💳 Retry: ${creditsToCharge} crédit(s) re-débités.`);
+    }
+
+    // Rehydrate la featured image pour les retries locaux :
+    // lors d'un échec GitHub, on conserve souvent seulement l'URL de couverture.
+    // On retente ici un upload WP afin d'obtenir un media_id exploitable par REST.
+    if (!publishPayload.featured_media_id && publishPayload.featured_media_url) {
+      const featuredMedia = await uploadImageToWordPress(
+        site.url,
+        site.wp_user,
+        wpPassword,
+        publishPayload.featured_media_url,
+        publishPayload.title || job.source_title || 'Featured image',
+        site.connection_mode,
+        site.bridge_key
+      );
+
+      if (featuredMedia?.id) {
+        publishPayload.featured_media_id = featuredMedia.id;
+        publishPayload.featured_media_url = featuredMedia.url || publishPayload.featured_media_url;
+        console.log(`🖼️ Retry: image de couverture réuploadée (media_id=${featuredMedia.id}).`);
+      } else {
+        console.warn('⚠️ Retry: impossible de réuploader la couverture, tentative de publication avec payload existant.');
+      }
     }
 
     const pubResult = await publishPost({ ...site, wp_password: wpPassword }, publishPayload);
