@@ -99,9 +99,56 @@ async function markPublishSucceeded(jobId, publishedUrl = null) {
   return true;
 }
 
+async function getPublishPayload(jobId) {
+  const db = getPool();
+  if (!db) return null;
+
+  const { rows } = await db.query(
+    `
+      select *
+      from publish_retry_cache
+      where job_id = $1
+      limit 1
+    `,
+    [jobId]
+  );
+
+  return rows[0] || null;
+}
+
+async function listPublishPayloads({ status = null, limit = 20 } = {}) {
+  const db = getPool();
+  if (!db) return [];
+
+  const params = [];
+  let where = '';
+
+  if (status) {
+    params.push(status);
+    where = `where publish_status = $${params.length}`;
+  }
+
+  params.push(limit);
+
+  const { rows } = await db.query(
+    `
+      select *
+      from publish_retry_cache
+      ${where}
+      order by updated_at desc
+      limit $${params.length}
+    `,
+    params
+  );
+
+  return rows;
+}
+
 module.exports = {
   isPublishCacheEnabled,
   savePublishPayload,
   markPublishFailed,
   markPublishSucceeded,
+  getPublishPayload,
+  listPublishPayloads,
 };

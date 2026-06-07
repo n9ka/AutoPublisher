@@ -15,6 +15,7 @@ const { buildLanguageBlock } = require('./lib/languages');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
+const { savePublishPayload, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./lib/publish-cache');
 
 async function processNextArticle() {
   if (process.env.RUNNER_PUBLIC_IP) {
@@ -181,7 +182,11 @@ async function processNextArticle() {
       status: site.default_status || 'draft',
       categories: [categoryId],
       featured_media_id: featuredMediaId,
-      featured_media_url: featuredMediaUrl
+      featured_media_url: featuredMediaUrl,
+      _retry_meta: {
+        credits_to_charge: creditsSpent,
+        request_indexing: false,
+      }
     };
 
     if (process.env.DRY_RUN === 'true') {
@@ -197,9 +202,23 @@ async function processNextArticle() {
         .eq('id', articleId);
       return { status: 'published', title: wpData.title, url: 'https://dry-run.test', siteName: site.name, credits: creditsSpent, jsonRepaired: !!aiOutput._jsonRepaired };
     } else {
+      if (isPublishCacheEnabled()) {
+        await savePublishPayload({
+          jobId: articleId,
+          sourceKind: 'processor',
+          site,
+          payload: postPayload,
+        });
+        console.log('  🗂️  Payload de publication sauvegardé dans le cache de retry.');
+      }
+
       const secureSiteConfig = { ...site, wp_password: wpPassword };
       const pubResult = await publishPost(secureSiteConfig, postPayload);
       console.log(`  ✅ PUBLIÉ ! URL: ${pubResult.link}`);
+
+      if (isPublishCacheEnabled()) {
+        await markPublishSucceeded(articleId, pubResult.link);
+      }
 
       await supabase.from('processed_articles').insert({
         wordpress_site_id: site.id,
@@ -250,6 +269,10 @@ async function processNextArticle() {
       } catch (refundErr) {
         console.error(`  ⚠️ Échec du remboursement : ${refundErr.message}`);
       }
+    }
+
+    if (isPublishCacheEnabled()) {
+      await markPublishFailed(articleId, error.message);
     }
 
     await supabase

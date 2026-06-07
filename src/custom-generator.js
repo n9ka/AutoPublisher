@@ -495,6 +495,10 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       infographic_url: infographicUrl || null,
       infographic_alt: infographicUrl ? infographicAlt : null,
       section_image_urls: sectionImageReplaceMap.length > 0 ? sectionImageReplaceMap : undefined,
+      _retry_meta: {
+        credits_to_charge: creditsSpent,
+        request_indexing: !!job.request_indexing,
+      },
     };
 
     if (isPublishCacheEnabled()) {

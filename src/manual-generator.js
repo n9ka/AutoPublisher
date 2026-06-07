@@ -16,6 +16,7 @@ const { SEO_GENERATOR_PROMPT } = require('./prompts/seo-generator');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
+const { savePublishPayload, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./lib/publish-cache');
 
 const { EXPERT_ANALYST_PROMPT } = require('./prompts/expert-analyst');
 const { EXPERT_WRITER_PROMPT } = require('./prompts/expert-writer');
@@ -220,15 +221,35 @@ async function runManualJob() {
     }
 
     console.log('📤 Publication...');
-    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, {
+    const publishPayload = {
       title: aiMetadata.title, content: finalHtml, excerpt: aiMetadata.excerpt, slug: aiMetadata.slug,
       keywords: aiMetadata.keywords,
       status: job.custom_status || site.default_status || 'draft', categories: [categoryId],
       featured_media_id: featuredMedia?.id, featured_media_url: featuredMedia?.url || featuredImageUrl,
       date: job.scheduled_at || null,
       infographic_url: infographicUrl || null,
-      infographic_alt: infographicUrl ? infographicAlt : null
-    });
+      infographic_alt: infographicUrl ? infographicAlt : null,
+      _retry_meta: {
+        credits_to_charge: creditsSpent,
+        request_indexing: false,
+      }
+    };
+
+    if (isPublishCacheEnabled()) {
+      await savePublishPayload({
+        jobId,
+        sourceKind: 'manual',
+        site,
+        payload: publishPayload,
+      });
+      console.log('  🗂️  Payload de publication sauvegardé dans le cache de retry.');
+    }
+
+    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, publishPayload);
+
+    if (isPublishCacheEnabled()) {
+      await markPublishSucceeded(jobId, pubResult.link);
+    }
 
     await supabase.from('articles_queue').update({ status: 'published', processed_at: new Date(), published_title: aiMetadata.title, published_url: pubResult.link }).eq('id', jobId);
 
@@ -256,6 +277,9 @@ async function runManualJob() {
   } catch (error) {
     console.error(`❌ Erreur : ${error.message}`);
     if (creditsSpent > 0) await refundCredit(site.user_id, creditsSpent, jobId);
+    if (isPublishCacheEnabled()) {
+      await markPublishFailed(jobId, error.message);
+    }
     await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
     await sendTelegram(`❌ <b>[SEO ${mode.toUpperCase()}]</b> Échec\n• ${job?.source_title || jobId}\n• ${site?.name || '?'}\n└ ${error.message}`);
     process.exit(1);
