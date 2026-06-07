@@ -4,7 +4,7 @@ const { decrypt } = require('./encryption');
 const { publishPost, uploadImageToWordPress } = require('./wordpress');
 const { enqueueSocialPost } = require('./social/enqueue');
 const { upsertToWpCache } = require('./supabase-data');
-const { getPublishPayload, listPublishPayloads, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./publish-cache');
+const { getPublishPayload, listPublishPayloads, markPublishFailed, markPublishSucceeded, claimNextPublishPayload, isPublishCacheEnabled } = require('./publish-cache');
 const { spendCredit, refundCredit } = require('./credits');
 
 function getSiteBaseUrl(site) {
@@ -297,10 +297,15 @@ async function listRows({ status = 'failed', limit = 25 } = {}) {
   return listPublishPayloads({ status, limit });
 }
 
+async function claimNextRow(options = {}) {
+  return claimNextPublishPayload(options);
+}
+
 module.exports = {
   isPublishCacheEnabled,
   getRowForJob,
   listRows,
+  claimNextRow,
   retryOneRow,
   loadJob,
 };

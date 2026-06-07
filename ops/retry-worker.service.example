@@ -1,0 +1,23 @@
+[Unit]
+Description=Aspy AutoPublisher Publish Retry Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=neka
+WorkingDirectory=/home/neka/AutoPublisher
+ExecStart=/usr/bin/node src/retry-worker.js
+Restart=always
+RestartSec=15
+Environment=NODE_ENV=production
+
+# Exemples de filtres utiles :
+# Environment=RETRY_WORKER_SITE_URLS=https://zonementale.com,https://cfaw.fr
+# Environment=RETRY_WORKER_SOURCE_KINDS=custom,processor
+# Environment=RETRY_WORKER_POLL_MS=60000
+# Environment=RETRY_WORKER_BATCH_SIZE=3
+# Environment=RETRY_WORKER_MAX_ATTEMPTS=10
+
+[Install]
+WantedBy=multi-user.target

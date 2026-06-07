@@ -172,6 +172,51 @@ async function listPublishPayloads({ status = null, limit = 20 } = {}) {
   }
 }
 
+async function claimNextPublishPayload({ statuses = ['failed'], siteUrls = null, sourceKinds = null, maxAttempts = 10 } = {}) {
+  try {
+    const db = getPool();
+    if (!db) return null;
+
+    const normalizedStatuses = Array.isArray(statuses) && statuses.length > 0 ? statuses : ['failed'];
+    const normalizedSiteUrls = Array.isArray(siteUrls) && siteUrls.length > 0 ? siteUrls : null;
+    const normalizedSourceKinds = Array.isArray(sourceKinds) && sourceKinds.length > 0 ? sourceKinds : null;
+
+    const { rows } = await db.query(
+      `
+        with candidate as (
+          select id
+          from publish_retry_cache
+          where publish_status = any($1::text[])
+            and attempts < $2
+            and expires_at > now()
+            and ($3::text[] is null or site_url = any($3::text[]))
+            and ($4::text[] is null or source_kind = any($4::text[]))
+          order by updated_at asc
+          limit 1
+          for update skip locked
+        )
+        update publish_retry_cache prc
+        set publish_status = 'retrying',
+            updated_at = now()
+        from candidate
+        where prc.id = candidate.id
+        returning prc.*
+      `,
+      [
+        normalizedStatuses,
+        maxAttempts,
+        normalizedSiteUrls,
+        normalizedSourceKinds,
+      ]
+    );
+
+    return rows[0] || null;
+  } catch (error) {
+    console.warn(`[publish-cache] claim ignoré : ${error.message}`);
+    return null;
+  }
+}
+
 module.exports = {
   isPublishCacheEnabled,
   savePublishPayload,
@@ -179,4 +224,5 @@ module.exports = {
   markPublishSucceeded,
   getPublishPayload,
   listPublishPayloads,
+  claimNextPublishPayload,
 };
