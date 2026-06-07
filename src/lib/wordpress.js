@@ -4,26 +4,39 @@ function getRunnerContext() {
   return process.env.RUNNER_PUBLIC_IP ? ` | runner_ip=${process.env.RUNNER_PUBLIC_IP}` : '';
 }
 
+function getHeaderProfile() {
+  return (process.env.WP_HEADER_PROFILE || 'default').trim().toLowerCase();
+}
+
 /**
  * Génère des headers "humains" ultra-récents pour contourner les WAF (BitNinja 453, Imunify, Cloudflare, etc.)
  */
 function getHeaders(baseUrl, auth = null, contentType = 'application/json', bridgeKey = null) {
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    'Sec-Ch-Ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
-    'Sec-Ch-Ua-Mobile': '?0',
-    'Sec-Ch-Ua-Platform': '"Windows"',
-    'Sec-Fetch-Dest': 'empty',
-    'Sec-Fetch-Mode': 'cors',
-    'Sec-Fetch-Site': 'same-origin',
-    'Origin': baseUrl,
-    'Referer': baseUrl + '/'
-  };
+  const profile = getHeaderProfile();
+
+  const headers = profile === 'safe'
+    ? {
+        // Profil de test plus sobre pour les hebergeurs qui semblent
+        // reagir negativement aux faux headers navigateur.
+        'User-Agent': 'AspyPublisher/1.0',
+        'Accept': 'application/json'
+      }
+    : {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'Origin': baseUrl,
+        'Referer': baseUrl + '/'
+      };
 
   if (bridgeKey) {
     headers['X-Bridge-Auth'] = bridgeKey;
@@ -47,6 +60,7 @@ function toPublicLink(link, isHeadless) {
 async function uploadImageToWordPress(wpUrl, wpUser, wpPassword, imageUrl, altText, connectionMode = 'rest_api', bridgeKey = null) {
   if (!wpUrl || !imageUrl) return null;
   const baseUrl = wpUrl.replace(/\/$/, '');
+  const headerProfile = getHeaderProfile();
 
   // bridge_deferred : déléguer directement au plugin sans tenter REST
   if (connectionMode === 'bridge_deferred') {
@@ -56,6 +70,7 @@ async function uploadImageToWordPress(wpUrl, wpUser, wpPassword, imageUrl, altTe
 
   const isBridgeMode = connectionMode === 'bridge_plugin';
   if (isBridgeMode) console.log('  🖼️  Image : tentative REST avant Bridge...');
+  console.log(`  🧾 Profil headers WP: ${headerProfile}`);
 
   try {
     const imageResponse = await axios.get(imageUrl, {
@@ -113,6 +128,7 @@ async function uploadImageToWordPress(wpUrl, wpUser, wpPassword, imageUrl, altTe
 async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
   const { wp_user, wp_password, bridge_key } = siteConfig;
   const auth = !useBridge ? Buffer.from(`${wp_user}:${wp_password}`).toString('base64') : null;
+  const headerProfile = getHeaderProfile();
 
   let payload = {
     status: postData.status || 'draft',
@@ -151,6 +167,7 @@ async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
   }
 
   try {
+    console.log(`  🧾 Profil headers WP: ${headerProfile}`);
     const response = await axios.post(targetUrl, payload, {
       timeout: 60000,
       headers: getHeaders(baseUrl, auth, 'application/json', useBridge ? bridge_key : null)
