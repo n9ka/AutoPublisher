@@ -226,6 +226,7 @@ async function runManualJob() {
       keywords: aiMetadata.keywords,
       status: job.custom_status || site.default_status || 'draft', categories: [categoryId],
       featured_media_id: featuredMedia?.id, featured_media_url: featuredMedia?.url || featuredImageUrl,
+      featured_media_alt: aiMetadata.title,
       date: job.scheduled_at || null,
       infographic_url: infographicUrl || null,
       infographic_alt: infographicUrl ? infographicAlt : null,

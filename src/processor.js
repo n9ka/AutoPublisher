@@ -183,6 +183,7 @@ async function processNextArticle() {
       categories: [categoryId],
       featured_media_id: featuredMediaId,
       featured_media_url: featuredMediaUrl,
+      featured_media_alt: wpData.title,
       _retry_meta: {
         credits_to_charge: creditsSpent,
         request_indexing: false,

@@ -491,6 +491,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       categories: [categoryId],
       featured_media_id: featuredMedia?.id,
       featured_media_url: featuredMedia?.url || featuredImageUrl,
+      featured_media_alt: aiOutput.metadata.title,
       date: job.scheduled_at || null,
       infographic_url: infographicUrl || null,
       infographic_alt: infographicUrl ? infographicAlt : null,

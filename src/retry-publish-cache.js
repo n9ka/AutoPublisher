@@ -7,6 +7,138 @@ const { upsertToWpCache } = require('./lib/supabase-data');
 const { getPublishPayload, listPublishPayloads, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./lib/publish-cache');
 const { spendCredit, refundCredit } = require('./lib/credits');
 
+function getSiteBaseUrl(site) {
+  return (site.url || site.wp_url || '').replace(/\/$/, '');
+}
+
+function isSameHost(urlA, urlB) {
+  if (!urlA || !urlB) return false;
+  try {
+    return new URL(urlA).host === new URL(urlB).host;
+  } catch {
+    return false;
+  }
+}
+
+function replaceAllOccurrences(content, from, to) {
+  if (!content || !from || !to || from === to) return content;
+  return content.split(from).join(to);
+}
+
+async function tryUploadRetryMedia(site, wpPassword, imageUrl, altText, label) {
+  if (!imageUrl) return null;
+
+  try {
+    const media = await uploadImageToWordPress(
+      site.url,
+      site.wp_user,
+      wpPassword,
+      imageUrl,
+      altText,
+      site.connection_mode,
+      site.bridge_key
+    );
+
+    if (media?.id || media?.url) {
+      console.log(`🖼️ Retry: ${label} réuploadé${media.id ? ` (media_id=${media.id})` : ''}.`);
+      return media;
+    }
+
+    console.warn(`⚠️ Retry: ${label} non réuploadé, conservation de l'URL existante.`);
+    return null;
+  } catch (error) {
+    console.warn(`⚠️ Retry: échec réupload ${label}: ${error.message}`);
+    return null;
+  }
+}
+
+async function rehydratePublishPayload(site, job, publishPayload, wpPassword) {
+  const hydratedPayload = {
+    ...publishPayload,
+    content: publishPayload.content || '',
+  };
+  const siteBaseUrl = getSiteBaseUrl(site);
+
+  if (!hydratedPayload.featured_media_id && hydratedPayload.featured_media_url) {
+    const featuredAlt = hydratedPayload.featured_media_alt || hydratedPayload.title || job.source_title || 'Featured image';
+    const featuredMedia = await tryUploadRetryMedia(
+      site,
+      wpPassword,
+      hydratedPayload.featured_media_url,
+      featuredAlt,
+      'image de couverture'
+    );
+
+    if (featuredMedia?.id) {
+      hydratedPayload.featured_media_id = featuredMedia.id;
+      hydratedPayload.featured_media_url = featuredMedia.url || hydratedPayload.featured_media_url;
+    }
+  }
+
+  if (hydratedPayload.infographic_url && !isSameHost(hydratedPayload.infographic_url, siteBaseUrl)) {
+    const infographicAlt = hydratedPayload.infographic_alt || hydratedPayload.title || job.source_title || 'Infographic';
+    const infographicMedia = await tryUploadRetryMedia(
+      site,
+      wpPassword,
+      hydratedPayload.infographic_url,
+      infographicAlt,
+      'infographie'
+    );
+
+    if (infographicMedia?.url) {
+      hydratedPayload.content = replaceAllOccurrences(
+        hydratedPayload.content,
+        hydratedPayload.infographic_url,
+        infographicMedia.url
+      );
+      hydratedPayload.infographic_url = infographicMedia.url;
+    }
+  }
+
+  if (Array.isArray(hydratedPayload.section_image_urls) && hydratedPayload.section_image_urls.length > 0) {
+    const updatedSectionImages = [];
+
+    for (const entry of hydratedPayload.section_image_urls) {
+      const originalUrl = typeof entry === 'string' ? entry : entry?.url;
+      const altText = typeof entry === 'string' ? '' : (entry?.alt || '');
+
+      if (!originalUrl) continue;
+
+      if (isSameHost(originalUrl, siteBaseUrl)) {
+        updatedSectionImages.push(typeof entry === 'string' ? originalUrl : { ...entry, url: originalUrl });
+        continue;
+      }
+
+      const uploadedMedia = await tryUploadRetryMedia(
+        site,
+        wpPassword,
+        originalUrl,
+        altText || hydratedPayload.title || job.source_title || 'Section image',
+        'image de section'
+      );
+
+      if (uploadedMedia?.url) {
+        hydratedPayload.content = replaceAllOccurrences(
+          hydratedPayload.content,
+          originalUrl,
+          uploadedMedia.url
+        );
+        updatedSectionImages.push(
+          typeof entry === 'string'
+            ? uploadedMedia.url
+            : { ...entry, url: uploadedMedia.url }
+        );
+      } else {
+        updatedSectionImages.push(entry);
+      }
+    }
+
+    hydratedPayload.section_image_urls = updatedSectionImages;
+  }
+
+  return hydratedPayload;
+}
+
 function getArg(name) {
   const index = process.argv.indexOf(name);
   return index !== -1 ? process.argv[index + 1] : null;
@@ -137,31 +269,9 @@ async function retryOne(row) {
       console.log(`💳 Retry: ${creditsToCharge} crédit(s) re-débités.`);
     }
 
-    // Rehydrate la featured image pour les retries locaux :
-    // lors d'un échec GitHub, on conserve souvent seulement l'URL de couverture.
-    // On retente ici un upload WP afin d'obtenir un media_id exploitable par REST.
-    if (!publishPayload.featured_media_id && publishPayload.featured_media_url) {
-      const featuredMedia = await uploadImageToWordPress(
-        site.url,
-        site.wp_user,
-        wpPassword,
-        publishPayload.featured_media_url,
-        publishPayload.title || job.source_title || 'Featured image',
-        site.connection_mode,
-        site.bridge_key
-      );
-
-      if (featuredMedia?.id) {
-        publishPayload.featured_media_id = featuredMedia.id;
-        publishPayload.featured_media_url = featuredMedia.url || publishPayload.featured_media_url;
-        console.log(`🖼️ Retry: image de couverture réuploadée (media_id=${featuredMedia.id}).`);
-      } else {
-        console.warn('⚠️ Retry: impossible de réuploader la couverture, tentative de publication avec payload existant.');
-      }
-    }
-
-    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, publishPayload);
-    await applySuccessEffects(row.source_kind, job, site, publishPayload, pubResult);
+    const hydratedPayload = await rehydratePublishPayload(site, job, publishPayload, wpPassword);
+    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, hydratedPayload);
+    await applySuccessEffects(row.source_kind, job, site, hydratedPayload, pubResult);
     await markPublishSucceeded(row.job_id, pubResult.link);
 
     if (retryMeta.request_indexing) {
