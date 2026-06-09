@@ -1,0 +1,19 @@
+[Unit]
+Description=Aspy Publish Retry Worker (Pi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/neka/AutoPublisher
+EnvironmentFile=/etc/aspy/retry-worker.env
+ExecStart=/usr/bin/node src/retry-worker-pi.js
+Restart=always
+RestartSec=10
+User=neka
+Group=neka
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

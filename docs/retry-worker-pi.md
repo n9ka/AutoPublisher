@@ -12,8 +12,13 @@ Faire tourner un worker local sur le Raspberry Pi qui :
 ## Fichiers concernés
 
 - `src/retry-worker.js` : boucle de polling
+- `src/retry-worker-pi.js` : wrapper Pi avec defaults prudents
+- `src/retry-worker-once.js` : variante batch unique pour un usage cron
+- `src/lib/retry-worker-runtime.js` : runtime partagé pour les entrées Pi
 - `src/lib/publish-retry-service.js` : moteur partagé de retry
-- `ops/retry-worker.service.example` : exemple de service systemd
+- `ops/retry-worker.service.example` : exemple historique
+- `ops/pi/aspy-retry-worker.service` : service systemd recommandé pour le Pi
+- `ops/pi/retry-worker.env.example` : variables d'environnement prêtes à copier
 
 ## Variables d'environnement minimales
 
@@ -73,12 +78,26 @@ Le worker :
 node src/retry-worker.js
 ```
 
+Pour le Pi, préférer :
+
+```bash
+node src/retry-worker-pi.js
+```
+
+Si vous voulez finalement passer par `cron` plutôt que par un daemon :
+
+```bash
+node src/retry-worker-once.js
+```
+
 ## Mise en service systemd
 
 Exemple :
 
 ```bash
-sudo cp ops/retry-worker.service.example /etc/systemd/system/aspy-retry-worker.service
+sudo mkdir -p /etc/aspy
+sudo cp ops/pi/retry-worker.env.example /etc/aspy/retry-worker.env
+sudo cp ops/pi/aspy-retry-worker.service /etc/systemd/system/aspy-retry-worker.service
 sudo systemctl daemon-reload
 sudo systemctl enable aspy-retry-worker
 sudo systemctl start aspy-retry-worker
@@ -98,6 +117,8 @@ Pour commencer en sécurité :
 - limiter aux sites problématiques
 - batch petit
 - polling 60s
+- préférer `systemd` si le worker tourne en boucle
+- garder `cron` seulement si vous choisissez `src/retry-worker-once.js`
 
 Exemple :
 
@@ -107,6 +128,14 @@ RETRY_WORKER_SOURCE_KINDS=custom,processor
 RETRY_WORKER_BATCH_SIZE=2
 RETRY_WORKER_POLL_MS=60000
 ```
+
+## Choix recommandé
+
+Pour l'état actuel du projet :
+
+- `systemd` est le meilleur choix pour le Pi
+- `src/retry-worker-pi.js` devient l'entrée dédiée Pi
+- `src/retry-worker.js` reste inchangé pour ne pas risquer le flux existant
 
 ## Point connu
 
