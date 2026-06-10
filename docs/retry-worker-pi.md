@@ -35,6 +35,7 @@ Optionnel mais recommandé :
 - `CACHE_DB_URL`
 - `CACHE_DB_SERVICE_KEY`
 - `WP_HEADER_PROFILE=default` ou `safe`
+- `DISCORD_WEBHOOK_URL` pour recevoir les rapports utiles du worker dans Discord
 
 ## Variables spécifiques au worker
 
@@ -71,6 +72,16 @@ Le worker :
    - rembourse les crédits du retry
    - remet Neon en `failed`
    - continue sur les autres jobs
+
+## Rapports Discord
+
+Si `DISCORD_WEBHOOK_URL` est renseigné, le worker Pi envoie :
+
+- un message au démarrage
+- un résumé quand un batch a réellement traité un ou plusieurs jobs
+- un message fatal si le worker crash
+
+Il n'envoie pas de message quand aucun job n'est repris, pour éviter le spam.
 
 ## Commande de test manuelle
 

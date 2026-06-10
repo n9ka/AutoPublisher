@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { isPublishCacheEnabled, claimNextRow, retryOneRow } = require('./publish-retry-service');
+const { sendDiscordWebhook } = require('./discord');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,6 +35,7 @@ async function processBatch(config, logger = console) {
     claimed: 0,
     published: 0,
     failed: 0,
+    publishedLinks: [],
   };
 
   while (summary.claimed < config.batchSize) {
@@ -50,8 +52,11 @@ async function processBatch(config, logger = console) {
     logger.log(`📥 Job claimé | job=${row.job_id} | site=${row.site_name || row.site_url} | type=${row.source_kind}`);
 
     try {
-      await retryOneRow(row, logger);
+      const result = await retryOneRow(row, logger);
       summary.published += 1;
+      if (result?.link) {
+        summary.publishedLinks.push(result.link);
+      }
     } catch (_) {
       summary.failed += 1;
     }
@@ -74,6 +79,15 @@ async function runLoop(config, logger = console) {
   }
 
   printWorkerBanner(config, logger);
+  await sendDiscordWebhook(
+    [
+      `Retry worker Pi demarre [${config.runtimeLabel}]`,
+      `poll=${config.pollMs}ms`,
+      `batch=${config.batchSize}`,
+      `maxAttempts=${config.maxAttempts}`,
+      `statuts=${config.statuses.join(',')}`,
+    ].join(' | ')
+  );
 
   while (true) {
     const startedAt = Date.now();
@@ -87,6 +101,19 @@ async function runLoop(config, logger = console) {
         `✅ Batch terminé [${config.runtimeLabel}] : claimed=${summary.claimed} | ` +
         `published=${summary.published} | failed=${summary.failed} | duration=${durationMs}ms. ` +
         `Pause ${config.pollMs}ms.`
+      );
+      if (summary.publishedLinks.length > 0) {
+        logger.log(`🔗 URLs publiées [${config.runtimeLabel}] : ${summary.publishedLinks.join(' | ')}`);
+      }
+      await sendDiscordWebhook(
+        [
+          `Retry batch [${config.runtimeLabel}]`,
+          `claimed=${summary.claimed}`,
+          `published=${summary.published}`,
+          `failed=${summary.failed}`,
+          `duration=${durationMs}ms`,
+          summary.publishedLinks.length > 0 ? `urls=${summary.publishedLinks.join(' , ')}` : null,
+        ].filter(Boolean).join(' | ')
       );
     }
 

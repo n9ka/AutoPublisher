@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { getWorkerConfig, runLoop } = require('./lib/retry-worker-runtime');
+const { sendDiscordWebhook } = require('./lib/discord');
 
 function applyPiDefaults() {
   if (!process.env.RETRY_WORKER_RUNTIME_LABEL) process.env.RETRY_WORKER_RUNTIME_LABEL = 'pi';
@@ -17,5 +18,7 @@ async function main() {
 
 main().catch((error) => {
   console.error(`💥 Retry worker Pi fatal: ${error.message}`);
-  process.exit(1);
+  sendDiscordWebhook(`Retry worker Pi fatal [pi] | error=${error.message}`).finally(() => {
+    process.exit(1);
+  });
 });
