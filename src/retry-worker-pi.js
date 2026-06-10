@@ -17,8 +17,9 @@ async function main() {
 }
 
 main().catch((error) => {
+  const runtimeLabel = process.env.RETRY_WORKER_RUNTIME_LABEL || 'pi';
   console.error(`💥 Retry worker Pi fatal: ${error.message}`);
-  sendDiscordWebhook(`Retry worker Pi fatal [pi] | error=${error.message}`).finally(() => {
+  sendDiscordWebhook(`Retry worker Pi fatal [${runtimeLabel}] | error=${error.message}`).finally(() => {
     process.exit(1);
   });
 });
