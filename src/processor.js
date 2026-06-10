@@ -169,6 +169,10 @@ async function processNextArticle() {
       );
       featuredMediaId = media ? media.id : null;
       featuredMediaUrl = media ? media.url : null;
+
+      if (!featuredMediaId && imageUrl) {
+        console.warn('  ⚠️ Upload featured image échoué, conservation de l\'URL source pour le retry cache.');
+      }
     }
 
     // 6. Publication
@@ -182,7 +186,7 @@ async function processNextArticle() {
       status: site.default_status || 'draft',
       categories: [categoryId],
       featured_media_id: featuredMediaId,
-      featured_media_url: featuredMediaUrl,
+      featured_media_url: featuredMediaUrl || imageUrl,
       featured_media_alt: wpData.title,
       _retry_meta: {
         credits_to_charge: creditsSpent,
