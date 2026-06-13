@@ -207,7 +207,16 @@ async function runCopycatJob() {
   const outputLanguage = opts.output_language || site.default_language || 'fr';
   const languageBlock = buildLanguageBlock(outputLanguage);
 
-  const langLabels = { fr: 'FRANÇAIS', en: 'ENGLISH', es: 'ESPAÑOL', de: 'DEUTSCH', it: 'ITALIANO', pt: 'PORTUGUÊS' };
+  const langLabels = {
+    fr: 'FRANÇAIS',
+    fr_BE: 'FRANÇAIS (BELGIQUE)',
+    en: 'ENGLISH',
+    nl_BE: 'NEDERLANDS (BELGIË)',
+    es: 'ESPAÑOL',
+    de: 'DEUTSCH',
+    it: 'ITALIANO',
+    pt: 'PORTUGUÊS',
+  };
   const outputLanguageLabel = langLabels[outputLanguage] || 'FRANÇAIS';
 
   try {

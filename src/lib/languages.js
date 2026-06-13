@@ -1,6 +1,8 @@
 const LANGUAGE_NAMES = {
   fr: 'français',
+  fr_BE: 'français (Belgique)',
   en: 'anglais',
+  nl_BE: 'néerlandais (Belgique)',
   es: 'espagnol',
   de: 'allemand',
   it: 'italien',
@@ -9,7 +11,9 @@ const LANGUAGE_NAMES = {
 
 const LANG_TO_BRAVE = {
   fr: { country: 'fr', search_lang: 'fr' },
+  fr_BE: { country: 'be', search_lang: 'fr' },
   en: { country: 'us', search_lang: 'en' },
+  nl_BE: { country: 'be', search_lang: 'nl' },
   es: { country: 'es', search_lang: 'es' },
   de: { country: 'de', search_lang: 'de' },
   it: { country: 'it', search_lang: 'it' },
@@ -18,7 +22,9 @@ const LANG_TO_BRAVE = {
 
 const LANG_TO_PEXELS_LOCALE = {
   fr: 'fr-FR',
+  fr_BE: 'fr-BE',
   en: 'en-US',
+  nl_BE: 'nl-BE',
   es: 'es-ES',
   de: 'de-DE',
   it: 'it-IT',
@@ -27,7 +33,9 @@ const LANG_TO_PEXELS_LOCALE = {
 
 const INFOGRAPHIC_LABEL = {
   fr: 'Infographie',
+  fr_BE: 'Infographie',
   en: 'Infographic',
+  nl_BE: 'Infografiek',
   es: 'Infografía',
   de: 'Infografik',
   it: 'Infografica',

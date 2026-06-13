@@ -27,6 +27,17 @@ const FIXED_COSTS = {
   section_img: 0.5, // Runware par image de section
 };
 
+const OUTPUT_LANGUAGE_LABELS = {
+  fr: 'FRENCH',
+  fr_BE: 'FRENCH (BELGIUM)',
+  en: 'ENGLISH',
+  nl_BE: 'DUTCH (BELGIUM)',
+  es: 'SPANISH',
+  de: 'GERMAN',
+  it: 'ITALIAN',
+  pt: 'PORTUGUESE',
+};
+
 /**
  * Calcule le coût total d'un job custom
  * @param {Object} opts — custom_options JSONB
@@ -211,7 +222,7 @@ async function runCustomJob() {
       : '';
 
     const sectionImagesBlock = sectionImgCount > 0
-      ? `## Prompts Images de Section\nGénère ${sectionImgCount} entrées dans "section_image_prompts" (prompts EN ANGLAIS pour Runware : photographie professionnelle, textless, no text, no words, no letters, sujet unique) ET ${sectionImgCount} entrées dans "section_image_alts" (alt texts in ${outputLanguage === 'fr' ? 'FRENCH' : outputLanguage === 'en' ? 'ENGLISH' : outputLanguage === 'es' ? 'SPANISH' : outputLanguage === 'de' ? 'GERMAN' : outputLanguage === 'it' ? 'ITALIAN' : outputLanguage === 'pt' ? 'PORTUGUESE' : 'the article language'}, 60-80 characters, include the section keyword, descriptive and natural).`
+      ? `## Prompts Images de Section\nGénère ${sectionImgCount} entrées dans "section_image_prompts" (prompts EN ANGLAIS pour Runware : photographie professionnelle, textless, no text, no words, no letters, sujet unique) ET ${sectionImgCount} entrées dans "section_image_alts" (alt texts in ${OUTPUT_LANGUAGE_LABELS[outputLanguage] || 'the article language'}, 60-80 characters, include the section keyword, descriptive and natural).`
       : '';
 
     const researchInstructionsBlock = opts.research_instructions

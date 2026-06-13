@@ -59,6 +59,13 @@ function toPublicLink(link, isHeadless) {
   return isHeadless && link ? link.replace('://cms.', '://') : link;
 }
 
+function getBridgeNamespace() {
+  const raw = (process.env.WP_BRIDGE_NAMESPACE || 'aspy').trim();
+  return raw
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\/v1$/i, '');
+}
+
 /**
  * Télécharge une image depuis une URL et l'upload sur WordPress
  */
@@ -149,7 +156,7 @@ async function _doPublish(baseUrl, siteConfig, postData, useBridge) {
 
   if (useBridge) {
     console.log('  🛡️  Utilisation du mode Bridge (Base64 encoding)...');
-    const bridgeNs = process.env.WP_BRIDGE_NAMESPACE;
+    const bridgeNs = getBridgeNamespace();
     targetUrl = `${baseUrl}/wp-json/${bridgeNs}/v1/bridge`;
     payload.bridge_key = bridge_key;
     payload.title_base64 = Buffer.from(postData.title).toString('base64');
