@@ -14,6 +14,7 @@ const { upsertToWpCache } = require('./lib/supabase-data');
 const { classifyArticle } = require('./lib/gemini');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
+const { getDeepSeekPeakTelegramNote } = require('./lib/deepseek-pricing');
 const { CUSTOM_ANALYST_PROMPT } = require('./prompts/custom-analyst');
 const { CUSTOM_WRITER_PROMPT } = require('./prompts/custom-writer');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
@@ -567,7 +568,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
 
     console.log(`✅ [CUSTOM] Succès : ${pubResult.link}`);
     const repairNote = aiOutput._jsonRepaired ? '\n⚠️ JSON réparé par IA (OpenRouter)' : '';
-    await sendTelegram(`✅ <b>[SEO CUSTOM]</b> Article publié\n• <a href="${pubResult.link}">${aiOutput.metadata.title}</a>\n• ${site.name}${repairNote}`);
+    await sendTelegram(`✅ <b>[SEO CUSTOM]</b> Article publié\n• <a href="${pubResult.link}">${aiOutput.metadata.title}</a>\n• ${site.name}${repairNote}${getDeepSeekPeakTelegramNote()}`);
     process.exit(0);
 
   } catch (error) {

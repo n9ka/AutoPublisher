@@ -3,6 +3,7 @@
  * Supporte tout provider avec une API /v1/chat/completions (OpenRouter, MiniMax, Anthropic, DeepSeek, Gemini...)
  * La configuration (url, clé env, modèle) vient d'une ligne de la table llm_models en DB.
  */
+const { recordDeepSeekRequest } = require('./deepseek-pricing');
 
 /**
  * @param {string} prompt
@@ -33,6 +34,7 @@ async function generateWithLLM(prompt, modelConfig) {
     body.provider = { order: modelConfig.provider_order };
   }
 
+  recordDeepSeekRequest(modelConfig.api_base_url);
   const res = await fetch(`${modelConfig.api_base_url}/chat/completions`, {
     method: 'POST',
     headers: {

@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { recordDeepSeekRequest } = require('./deepseek-pricing');
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.warn('DEEPSEEK_API_KEY is missing.');
@@ -37,6 +38,7 @@ async function generateContent(prompt, model = 'deepseek-chat', retries = 3) {
       params.messages[0] = { ...params.messages[0], content: params.messages[0].content.replace(/ \[retry-\d+\]$/, '') + ` [retry-${Date.now()}]` };
     }
     try {
+      recordDeepSeekRequest('https://api.deepseek.com');
       const response = await deepseek.chat.completions.create(params);
       return response.choices[0].message.content;
     } catch (error) {

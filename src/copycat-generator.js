@@ -15,6 +15,7 @@ const { upsertToWpCache } = require('./lib/supabase-data');
 const { classifyArticle } = require('./lib/gemini');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
+const { getDeepSeekPeakTelegramNote } = require('./lib/deepseek-pricing');
 const { COPYCAT_WRITER_PROMPT } = require('./prompts/copycat-writer');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 
@@ -380,7 +381,7 @@ async function runCopycatJob() {
 
     console.log(`✅ [COPYCAT] Succès : ${pubResult.link}`);
     const repairNote = aiOutput._jsonRepaired ? '\n⚠️ JSON réparé par IA' : '';
-    await sendTelegram(`✅ <b>[COPYCAT]</b> Article publié\n• <a href="${pubResult.link}">${wp.title}</a>\n• ${site.name}${repairNote}`);
+    await sendTelegram(`✅ <b>[COPYCAT]</b> Article publié\n• <a href="${pubResult.link}">${wp.title}</a>\n• ${site.name}${repairNote}${getDeepSeekPeakTelegramNote()}`);
     process.exit(0);
 
   } catch (error) {

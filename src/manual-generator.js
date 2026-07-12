@@ -16,6 +16,7 @@ const { SEO_GENERATOR_PROMPT } = require('./prompts/seo-generator');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
+const { getDeepSeekPeakTelegramNote } = require('./lib/deepseek-pricing');
 const { savePublishPayload, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./lib/publish-cache');
 
 const { EXPERT_ANALYST_PROMPT } = require('./prompts/expert-analyst');
@@ -272,7 +273,7 @@ async function runManualJob() {
 
     console.log(`✅ Succès : ${pubResult.link}`);
     const repairNote = jsonRepaired ? '\n⚠️ JSON réparé par IA (OpenRouter)' : '';
-    await sendTelegram(`✅ <b>[SEO ${mode.toUpperCase()}]</b> Article publié\n• <a href="${pubResult.link}">${aiMetadata.title}</a>\n• ${site.name}${repairNote}`);
+    await sendTelegram(`✅ <b>[SEO ${mode.toUpperCase()}]</b> Article publié\n• <a href="${pubResult.link}">${aiMetadata.title}</a>\n• ${site.name}${repairNote}${getDeepSeekPeakTelegramNote()}`);
     process.exit(0);
 
   } catch (error) {
