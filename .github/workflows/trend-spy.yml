@@ -1,7 +1,7 @@
 name: Trend Spy Detector
 on:
   schedule:
-    - cron: '5 */8 * * *' # 5 min après le détecteur RSS
+    - cron: '35 4,12,20 * * *' # 5 min après le détecteur RSS, hors périodes peak DeepSeek (UTC)
   workflow_dispatch:
 
 jobs:

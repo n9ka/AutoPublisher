@@ -1,7 +1,7 @@
 name: Article Processor
 on:
   schedule:
-    - cron: '15 */8 * * *' # 15 min après le détecteur
+    - cron: '45 4,12,20 * * *' # 15 min après le détecteur, hors périodes peak DeepSeek (UTC)
   workflow_dispatch:
 
 jobs:
@@ -26,8 +26,51 @@ jobs:
           RUNNER_PUBLIC_IP="$(curl -4 -fsS https://api.ipify.org || curl -4 -fsS https://ifconfig.me || echo unknown)"
           echo "RUNNER_PUBLIC_IP=$RUNNER_PUBLIC_IP" >> "$GITHUB_ENV"
           echo "Runner public IP: $RUNNER_PUBLIC_IP"
+
+      - name: Enforce DeepSeek off-peak window
+        id: deepseek-window
+        shell: bash
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          hour="$(date -u +%H)"
+          minute="$(date -u +%M)"
+          now_minutes=$((10#$hour * 60 + 10#$minute))
+          should_process=true
+          reason=""
+
+          # Peak DeepSeek (UTC): 01:00–04:00 and 06:00–10:00.
+          # The 05:00–06:00 buffer prevents a 45-minute processor run from crossing into peak.
+          if (( now_minutes >= 60 && now_minutes < 240 )); then
+            should_process=false
+            reason="période peak DeepSeek"
+          elif (( now_minutes >= 300 && now_minutes < 600 )); then
+            should_process=false
+            reason="fenêtre tampon avant ou pendant la période peak DeepSeek"
+          fi
+
+          echo "should_process=$should_process" >> "$GITHUB_OUTPUT"
+
+          if [[ "$should_process" == "false" ]]; then
+            message="⏸️ Processor DeepSeek reporté à ${hour}:${minute} UTC : ${reason}. Aucun article n'a été traité ; le prochain cycle reprendra les jobs en attente."
+            echo "$message"
+
+            if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]; then
+              curl --fail --silent --show-error --max-time 10 --retry 2 \
+                -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+                --data-urlencode "text=${message}" \
+                --data-urlencode "disable_web_page_preview=true" \
+                --output /dev/null \
+                || echo "::warning::Telegram notification failed."
+            else
+              echo "::warning::Telegram credentials are not configured."
+            fi
+          fi
       
       - name: Process Next Article
+        if: steps.deepseek-window.outputs.should_process == 'true'
         run: node src/processor.js
         env:
           RUNNER_PUBLIC_IP: ${{ env.RUNNER_PUBLIC_IP }}
