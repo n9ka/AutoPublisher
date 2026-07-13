@@ -232,7 +232,7 @@ async function processNextArticle() {
           published_url: 'https://dry-run.test'
         })
         .eq('id', articleId);
-      return { status: 'published', title: wpData.title, url: 'https://dry-run.test', siteName: site.name, credits: creditsSpent, jsonRepaired: !!aiOutput._jsonRepaired };
+      return { status: 'published', title: wpData.title, url: 'https://dry-run.test', siteName: site.name, sourceType: queueItem.source_type, credits: creditsSpent, jsonRepaired: !!aiOutput._jsonRepaired };
     } else {
       if (isPublishCacheEnabled()) {
         await savePublishPayload({
@@ -287,7 +287,7 @@ async function processNextArticle() {
         });
       }
 
-      return { status: 'published', title: wpData.title, url: pubResult.link, siteName: site.name, credits: creditsSpent, jsonRepaired: !!aiOutput._jsonRepaired };
+      return { status: 'published', title: wpData.title, url: pubResult.link, siteName: site.name, sourceType: queueItem.source_type, credits: creditsSpent, jsonRepaired: !!aiOutput._jsonRepaired };
     }
 
   } catch (error) {
@@ -315,7 +315,7 @@ async function processNextArticle() {
         processed_at: new Date()
       })
       .eq('id', articleId);
-    return { status: 'failed', title: queueItem.source_title, siteName: site?.name || '?', error: error.message };
+    return { status: 'failed', title: queueItem.source_title, siteName: site?.name || '?', sourceType: queueItem.source_type, error: error.message };
   }
 }
 
@@ -397,7 +397,8 @@ async function parseAiJson(text) {
       lines.push(`\n✅ <b>${published.length} publié(s)</b>`);
       for (const r of published) {
         const repairTag = r.jsonRepaired ? ' 🔧' : '';
-        lines.push(`• <a href="${r.url}">${r.title}</a> — ${r.siteName}${repairTag}`);
+        const sourceLabel = r.sourceType === 'trend' ? 'TREND SPY' : 'RSS';
+        lines.push(`• <b>[${sourceLabel}]</b> <a href="${r.url}">${r.title}</a> — ${r.siteName}${repairTag}`);
       }
       lines.push(`\n💳 Crédits consommés : ${totalCredits}`);
       const repairedCount = published.filter(r => r.jsonRepaired).length;
@@ -407,7 +408,8 @@ async function parseAiJson(text) {
     if (failed.length > 0) {
       lines.push(`\n❌ <b>${failed.length} échec(s)</b>`);
       for (const r of failed) {
-        lines.push(`• ${r.title} — ${r.siteName}\n  └ ${r.error}`);
+        const sourceLabel = r.sourceType === 'trend' ? 'TREND SPY' : 'RSS';
+        lines.push(`• <b>[${sourceLabel}]</b> ${r.title} — ${r.siteName}\n  └ ${r.error}`);
       }
     }
 
