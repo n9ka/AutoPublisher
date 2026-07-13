@@ -2,7 +2,7 @@ require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { scrapeArticle } = require('./lib/scraper');
 const { generateContent } = require('./lib/deepseek');
-const { classifyArticle } = require('./lib/gemini');
+const { classifyArticle, generateTrendBrief } = require('./lib/gemini');
 const { searchImage } = require('./lib/pexels');
 const { generateRunwareImage } = require('./lib/runware');
 const { uploadImageToWordPress, publishPost, getCategories } = require('./lib/wordpress');
@@ -11,6 +11,7 @@ const { spendCredit, refundCredit } = require('./lib/credits');
 const { upsertToWpCache } = require('./lib/supabase-data');
 const { MAIN_PROMPT } = require('./prompts/templates');
 const { TREND_SPY_PROMPT } = require('./prompts/trend-spy');
+const { TREND_ANALYST_PROMPT } = require('./prompts/trend-analyst');
 const { buildLanguageBlock } = require('./lib/languages');
 const { repairJson, repairJsonWithAI } = require('./lib/json-helper');
 const { enqueueSocialPost } = require('./lib/social/enqueue');
@@ -70,10 +71,10 @@ async function processNextArticle() {
     let isFallback = false;
 
     if (isTrend) {
-      // Pour les tendances, on utilise le contexte de recherche (LangSearch)
+      // Pour les tendances, on utilise le contexte de recherche enrichi et qualifié.
       finalContent = queueItem.source_content_extract;
       if (!finalContent || finalContent.length < 150) {
-        console.warn('  ⚠️ Données LangSearch faibles. Utilisation du titre comme base.');
+        console.warn('  ⚠️ Contexte Trend Spy faible. Utilisation du titre comme base.');
         finalContent = `Sujet : ${queueItem.source_title}. Effectue une analyse approfondie sur ce sujet actuel.`;
       }
     } else {
@@ -94,8 +95,8 @@ async function processNextArticle() {
       }
     }
 
-    // 2. Crédit (1 pour RSS, 2 pour Trend)
-    const creditCost = isTrend ? 2 : 1;
+    // 2. Crédit (1 pour RSS, 3 pour Trend Spy : recherche + brief + rédaction)
+    const creditCost = isTrend ? 3 : 1;
     await spendCredit(userId, creditCost, articleId);
     creditsSpent = creditCost;
     console.log(`  💳 ${creditCost} crédit(s) débité(s).`);
@@ -108,6 +109,30 @@ async function processNextArticle() {
     const currentDate = new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
     const langCode = site.default_language || 'fr';
     const languageBlock = buildLanguageBlock(langCode);
+
+    let trendBrief = null;
+    let trendTargetLength = 1400;
+    if (isTrend) {
+      const analystPrompt = TREND_ANALYST_PROMPT
+        .replace('{{language_block}}', languageBlock)
+        .replace('{{site_name}}', site.name || 'Le site')
+        .replace('{{persona_name}}', persona.name || 'Expert')
+        .replace('{{persona_specialty}}', persona.specialty || '')
+        .replace('{{trend_title}}', queueItem.source_title)
+        .replace('{{current_date}}', currentDate)
+        .replace('{{search_results}}', finalContent.substring(0, 42000));
+
+      console.log('  🧭 Génération du brief stratégique Trend Spy...');
+      trendBrief = await generateTrendBrief(analystPrompt, queueItem.source_title);
+      const recommendedLength = Number(trendBrief?.recommended_length);
+      if ([1000, 1400, 1700].includes(recommendedLength)) {
+        trendTargetLength = recommendedLength;
+      }
+    }
+
+    const trendBriefContext = trendBrief
+      ? JSON.stringify(trendBrief, null, 2)
+      : 'Brief indisponible : privilégie les faits explicitement présents dans les données de recherche et adopte un angle explicatif prudent.';
 
     let filledPrompt = promptTemplate
       .replace('{{language_block}}', languageBlock)
@@ -122,7 +147,9 @@ async function processNextArticle() {
       .replace('{{current_date}}', currentDate)
       .replace('{{source_content}}', finalContent.substring(0, 50000))
       .replace('{{search_results}}', finalContent.substring(0, 50000))
-      .replace('{{trend_title}}', queueItem.source_title);
+      .replace('{{trend_title}}', queueItem.source_title)
+      .replace('{{target_length}}', String(trendTargetLength))
+      .replace('{{trend_brief}}', trendBriefContext);
 
     const rawResponse = await generateContent(filledPrompt);
     

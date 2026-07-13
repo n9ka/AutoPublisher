@@ -33,4 +33,6 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           LANGSEARCH_API_KEY: ${{ secrets.LANGSEARCH_API_KEY }}
           BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          TAVILY_API_KEY_FALLBACK: ${{ secrets.TAVILY_API_KEY_FALLBACK }}
           MAX_ARTICLES_PER_DAY: ${{ vars.MAX_ARTICLES_PER_DAY || '1' }}

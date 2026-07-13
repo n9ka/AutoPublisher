@@ -1,7 +1,8 @@
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { getDailyTrends } = require('./lib/trends');
-const { researchTopic } = require('./lib/research');
+const { researchTrendTopic } = require('./lib/research');
+const { getFreudixTrendMetrics } = require('./lib/freudix');
 const { getEmbedding, filterBestArticlesBatch } = require('./lib/gemini');
 const TREND_SEMANTIC_MATCH_THRESHOLD = parseFloat(process.env.TREND_SEMANTIC_MATCH_THRESHOLD || '0.75');
 const TREND_DUPLICATE_LOOKBACK_DAYS = parseInt(process.env.TREND_DUPLICATE_LOOKBACK_DAYS || '45', 10);
@@ -143,6 +144,31 @@ function buildTrendEmbeddingText(trend) {
     .trim()
     .slice(0, 700);
   return `${title} ${snippet}`.trim();
+}
+
+function buildTrendSourceContext(trend, freudixMetrics, research, category) {
+  const metrics = freudixMetrics || {};
+  const lines = [
+    '# DONNÉES SEO FREUDIX',
+    `Sujet : ${trend.title}`,
+    `Catégorie : ${category || trend.category || 'non précisée'}`,
+    `Trafic Google Trends estimé : ${metrics.trendsTraffic || trend.trendsTraffic || 0}`,
+    `Volume de recherche mensuel : ${metrics.searchVolume || trend.searchVolume || 0}`,
+  ];
+
+  if (metrics.cpc !== null && metrics.cpc !== undefined) lines.push(`CPC estimé : ${metrics.cpc}`);
+  if (metrics.competition !== null && metrics.competition !== undefined) lines.push(`Concurrence SEO : ${metrics.competition}`);
+  if (metrics.updatedAt) lines.push(`Données Freudix mises à jour : ${metrics.updatedAt}`);
+  if (metrics.analyzeUrl) lines.push(`Analyse Freudix : ${metrics.analyzeUrl}`);
+
+  lines.push('', '# QUALITÉ DE LA RECHERCHE');
+  lines.push(`Provider principal : ${research.meta.provider}`);
+  lines.push(`Sources exploitables : ${research.meta.source_count} — domaines distincts : ${research.meta.distinct_domain_count}`);
+  lines.push(`Tavily utilisé : ${research.meta.used_tavily ? 'oui' : 'non'}`);
+  lines.push(`Évaluation : ${research.meta.quality_reason}`);
+  lines.push('', research.context || 'Aucune source exploitable : rester factuel et limiter les affirmations.');
+
+  return lines.join('\n').slice(0, 48000);
 }
 
 async function detectTrends() {
@@ -330,12 +356,19 @@ async function detectTrends() {
         continue;
       }
       
-      // 3. Insertion si tout est OK
+      // 3. Enrichissement recherche : Freudix fournit les métriques SEO,
+      // LangSearch les sources fraîches et Tavily n'intervient que si elles sont faibles.
+      const freudixMetrics = await getFreudixTrendMetrics(trend.title);
+      const searchQuery = buildTrendResearchQuery(trend.title, keywords, spy.category);
+      const research = await researchTrendTopic(searchQuery, site.default_language || 'fr');
+      const sourceContext = buildTrendSourceContext(trend, freudixMetrics, research, spy.category);
+
+      // 4. Insertion si tout est OK
       const { data: inserted, error } = await supabase.from('articles_queue').insert({
         wordpress_site_id: site.id,
         source_url: trend.articles[0]?.url || `https://www.google.com/search?q=${encodeURIComponent(trend.title)}`,
         source_title: trend.title,
-        source_content_extract: "", 
+        source_content_extract: sourceContext,
         source_type: 'trend',
         embedding: embedding,
         status: 'pending'
@@ -348,15 +381,6 @@ async function detectTrends() {
           .from('trend_spies')
           .update({ last_trend_detection_at: new Date().toISOString() })
           .eq('id', spy.id);
-        
-        // Recherche LangSearch (requête plus ciblée)
-        const searchQuery = buildTrendResearchQuery(trend.title, keywords, spy.category);
-        const context = await researchTopic(searchQuery);
-        if (context) {
-          await supabase.from('articles_queue')
-            .update({ source_content_extract: context })
-            .eq('id', inserted[0].id);
-        }
         
         added++;
       } else if (error) {

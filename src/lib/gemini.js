@@ -288,4 +288,53 @@ async function filterBestArticlesBatch(articles, persona, preferredKeywords = ""
   }
 }
 
-module.exports = { getEmbedding, classifyArticle, filterBestArticlesBatch, getStats, resetStats };
+function parseJsonObject(text = '') {
+  const cleaned = String(text)
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Produit un brief court avant la rédaction Trend Spy. Le mécanisme de
+ * fallback est le même que le filtre éditorial afin de ne pas ajouter une
+ * dépendance de modèle ni modifier le coût facturé à l'utilisateur.
+ */
+async function generateTrendBrief(prompt, trendTitle = '') {
+  const label = `generateTrendBrief("${String(trendTitle).substring(0, 60)}")`;
+
+  try {
+    const brief = await runWithMultiProviderFallback(
+      prompt,
+      parseJsonObject,
+      label,
+      { maxTokens: 1800, temperature: 0.2 }
+    );
+
+    if (!brief || typeof brief !== 'object') {
+      console.warn('  ⚠️ Brief Trend Spy invalide : rédaction sans brief stratégique.');
+      return null;
+    }
+    return brief;
+  } catch (error) {
+    console.warn(`  ⚠️ Brief Trend Spy indisponible : ${error?.message ?? String(error)}`);
+    return null;
+  }
+}
+
+module.exports = {
+  generateTrendBrief,
+  getEmbedding,
+  classifyArticle,
+  filterBestArticlesBatch,
+  getStats,
+  resetStats,
+};
