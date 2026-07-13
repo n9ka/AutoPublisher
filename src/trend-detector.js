@@ -37,17 +37,51 @@ function scoreTrendByKeywords(trend, keywordList) {
   return score;
 }
 
+function compareTrendCandidates(a, b) {
+  if (b.score !== a.score) return b.score - a.score;
+
+  const trafficDifference = (b.trend.trendsTraffic || 0) - (a.trend.trendsTraffic || 0);
+  if (trafficDifference !== 0) return trafficDifference;
+
+  const volumeDifference = (b.trend.searchVolume || 0) - (a.trend.searchVolume || 0);
+  if (volumeDifference !== 0) return volumeDifference;
+
+  return (a.trend.title || '').localeCompare(b.trend.title || '', 'fr');
+}
+
+function isTrendExcluded(trend, keywordList) {
+  if (!keywordList.length) return false;
+
+  const title = normalizeText(trend.title || "");
+  const snippet = normalizeText((trend.articles || []).map((a) => a.snippet || "").join(' ').slice(0, 300));
+
+  return keywordList.some((keyword) => {
+    const normalizedKeyword = normalizeText(keyword);
+    return normalizedKeyword && (title.includes(normalizedKeyword) || snippet.includes(normalizedKeyword));
+  });
+}
+
 function buildTrendResearchQuery(title, rawKeywords, category) {
   const keywordList = parseKeywords(rawKeywords).slice(0, 2);
   const categoryHintMap = {
-    t: 'technologie',
-    b: 'business',
-    m: 'sante',
-    s: 'sport',
-    e: 'divertissement',
-    sc: 'science',
-    w: 'international',
-    n: 'national'
+    'affaires-finance': 'affaires finance',
+    'alimentation-boissons': 'alimentation boissons',
+    'auto-vehicules': 'automobile vehicules',
+    autre: 'actualite',
+    'beaute-mode': 'beaute mode',
+    'climat-meteo': 'climat meteo',
+    divertissement: 'divertissement',
+    'emploi-education': 'emploi education',
+    jeux: 'jeux',
+    'loi-gouvernement': 'loi gouvernement',
+    'loisirs-passe-temps': 'loisirs passe temps',
+    politique: 'politique',
+    sante: 'sante',
+    sciences: 'sciences',
+    shopping: 'shopping',
+    sports: 'sports',
+    technologie: 'technologie',
+    'voyage-transport': 'voyage transport'
   };
 
   const parts = [title];
@@ -125,25 +159,25 @@ async function detectTrends() {
     const site = spy.wordpress_sites;
     console.log(`\n--- Espion pour : ${site.name} (Catégorie: ${spy.category}) ---`);
 
-    // 1. Quota Check
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    
-    const { count } = await supabase
-      .from('articles_queue')
-      .select('*', { count: 'exact', head: true })
-      .eq('wordpress_site_id', site.id)
-      .eq('source_type', 'trend')
-      .gte('created_at', today.toISOString());
+    // 1. Quota hebdomadaire lissé, identique au métronome RSS.
+    const maxPerWeek = spy.max_trends_per_week ?? 7;
 
-    const maxPerDay = spy.max_trends_per_day || 1;
-
-    if (count >= maxPerDay) {
-      console.log(`🛑 Quota Trends atteint (${count}/${maxPerDay}). Skip.`);
+    if (maxPerWeek <= 0) {
+      console.log('🛑 Quota Trend Spy désactivé. Skip.');
       continue;
     }
 
-    const quotaLeft = maxPerDay - count;
+    const intervalHours = (7 * 24) / maxPerWeek;
+
+    if (spy.last_trend_detection_at) {
+      const lastDetection = new Date(spy.last_trend_detection_at);
+      const diffHours = (new Date() - lastDetection) / (60 * 60 * 1000);
+
+      if (diffHours < intervalHours) {
+        console.log(`⏳ Trop tôt pour Trend Spy (dernier ajout il y a ${diffHours.toFixed(1)}h, intervalle cible : ${intervalHours.toFixed(1)}h). Skip.`);
+        continue;
+      }
+    }
 
     // 2. Fetch Trends
     const trends = await getDailyTrends(spy.category);
@@ -155,18 +189,29 @@ async function detectTrends() {
     // 3. Préparation des tendances avec préférence keywords (souple)
     const keywords = spy.keywords || "";
     const parsedKeywords = parseKeywords(keywords);
-    const maxPoolSize = Math.min(trends.length, Math.max(8, Math.min(20, quotaLeft * 4)));
+    const excludedKeywords = parseKeywords(spy.excluded_keywords || "");
+    const requireKeywordMatch = spy.require_keyword_match === true;
+    const eligibleTrends = trends.filter((trend) => !isTrendExcluded(trend, excludedKeywords));
+
+    if (eligibleTrends.length === 0) {
+      console.log('Ø Toutes les tendances sont exclues par les mots-clés configurés.');
+      continue;
+    }
+
+    const maxPoolSize = Math.min(eligibleTrends.length, 20);
     const exploratorySlots = parsedKeywords.length
       ? Math.min(2, Math.max(1, Math.floor(maxPoolSize * 0.25)))
       : 0;
 
-    const scoredTrends = trends
+    const scoredTrends = eligibleTrends
       .map((trend) => ({ trend, score: scoreTrendByKeywords(trend, parsedKeywords) }))
-      .sort((a, b) => b.score - a.score);
+      .sort(compareTrendCandidates);
 
+    const keywordHits = scoredTrends.filter((item) => item.score > 0);
     let candidateTrends = [];
-    if (parsedKeywords.length > 0) {
-      const keywordHits = scoredTrends.filter((item) => item.score > 0);
+    if (requireKeywordMatch) {
+      candidateTrends = keywordHits.slice(0, maxPoolSize).map((item) => item.trend);
+    } else if (parsedKeywords.length > 0) {
       const noHit = scoredTrends.filter((item) => item.score === 0);
       const focusSize = Math.max(1, maxPoolSize - exploratorySlots);
 
@@ -184,16 +229,18 @@ async function detectTrends() {
         candidateTrends = [...candidateTrends, ...remaining];
       }
     } else {
-      candidateTrends = trends.slice(0, maxPoolSize);
+      candidateTrends = scoredTrends.map((item) => item.trend).slice(0, maxPoolSize);
     }
 
     if (candidateTrends.length === 0) {
-      console.log('Ø Aucune tendance trouvée.');
+      console.log(requireKeywordMatch
+        ? 'Ø Aucune tendance ne correspond aux mots-clés requis.'
+        : 'Ø Aucune tendance trouvée.');
       continue;
     }
 
     console.log(
-      `🧭 Préfiltre keywords: ${parsedKeywords.length ? parsedKeywords.join(', ') : 'aucun'} | ${candidateTrends.length}/${trends.length} tendances conservées.`
+      `🧭 Préfiltre keywords: ${parsedKeywords.length ? parsedKeywords.join(', ') : 'aucun'} | mode strict: ${requireKeywordMatch ? 'oui' : 'non'} | exclusions: ${excludedKeywords.length ? excludedKeywords.join(', ') : 'aucune'} | priorité : mots-clés > trafic Trends > volume SEO | ${candidateTrends.length}/${eligibleTrends.length} tendances conservées.`
     );
     console.log(`🧐 Analyse IA de ${candidateTrends.length} tendances candidates...`);
 
@@ -234,7 +281,7 @@ async function detectTrends() {
     let added = 0;
 
     for (const idx of selectedIndices) {
-      if (added >= quotaLeft) break;
+      if (added >= 1) break;
 
       const trend = candidateTrends[idx];
 
@@ -297,6 +344,10 @@ async function detectTrends() {
       if (!error && inserted && inserted.length > 0) {
         console.log(`📥 Tendance ajoutée : ${trend.title}`);
         titlesAddedThisRun.push(trend.title);
+        await supabase
+          .from('trend_spies')
+          .update({ last_trend_detection_at: new Date().toISOString() })
+          .eq('id', spy.id);
         
         // Recherche LangSearch (requête plus ciblée)
         const searchQuery = buildTrendResearchQuery(trend.title, keywords, spy.category);
