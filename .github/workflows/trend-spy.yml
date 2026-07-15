@@ -36,3 +36,5 @@ jobs:
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           TAVILY_API_KEY_FALLBACK: ${{ secrets.TAVILY_API_KEY_FALLBACK }}
           MAX_ARTICLES_PER_DAY: ${{ vars.MAX_ARTICLES_PER_DAY || '1' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

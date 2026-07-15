@@ -4,6 +4,8 @@ const { getDailyTrends } = require('./lib/trends');
 const { researchTrendTopic } = require('./lib/research');
 const { getFreudixTrendMetrics } = require('./lib/freudix');
 const { getEmbedding, filterBestArticlesBatch } = require('./lib/gemini');
+const { sendTelegram } = require('./lib/telegram');
+const { getAutomatedOffPeakBlockReason, formatUtcTime } = require('./lib/deepseek-pricing');
 const TREND_SEMANTIC_MATCH_THRESHOLD = parseFloat(process.env.TREND_SEMANTIC_MATCH_THRESHOLD || '0.75');
 const TREND_DUPLICATE_LOOKBACK_DAYS = parseInt(process.env.TREND_DUPLICATE_LOOKBACK_DAYS || '45', 10);
 
@@ -172,6 +174,16 @@ function buildTrendSourceContext(trend, freudixMetrics, research, category) {
 }
 
 async function detectTrends() {
+  const now = new Date();
+  const blockReason = getAutomatedOffPeakBlockReason(now);
+  if (blockReason) {
+    const time = formatUtcTime(now);
+    const message = `⏸️ <b>Trend Spy reporté</b> à ${time} UTC : ${blockReason}. Aucune recherche de tendance ni aucun job Trend n'a été créé.`;
+    console.log(message);
+    await sendTelegram(message);
+    return;
+  }
+
   console.log('🔍 Démarrage de Trend Spy (Recherche de tendances)...');
 
   const { data: spies, error: spyError } = await supabase
