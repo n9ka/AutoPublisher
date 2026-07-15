@@ -10,6 +10,7 @@ const { fetchRSS } = require('./lib/rss');
 const { getEmbedding, filterBestArticlesBatch, getStats, resetStats } = require('./lib/gemini');
 const { hasEnoughCredits } = require('./lib/credits');
 const { sendTelegram } = require('./lib/telegram');
+const { getAutomatedOffPeakBlockReason, formatUtcTime } = require('./lib/deepseek-pricing');
 
 // Configuration
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -189,6 +190,16 @@ async function checkAutoSeo(site) {
 }
 
 async function detect() {
+  const now = new Date();
+  const blockReason = getAutomatedOffPeakBlockReason(now);
+  if (blockReason) {
+    const time = formatUtcTime(now);
+    const message = `⏸️ <b>Core Detector reporté</b> à ${time} UTC : ${blockReason}. Aucun job RSS ou AutoPilot n'a été créé ; aucun workflow SEO n'a été déclenché.`;
+    console.log(message);
+    await sendTelegram(message);
+    return;
+  }
+
   console.log('🔍 Démarrage de la détection (Mode Batch)...');
 
   // Reset stats IA pour ce run
