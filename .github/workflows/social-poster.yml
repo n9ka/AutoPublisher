@@ -2,7 +2,7 @@ name: Social Poster
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # toutes les 4 heures
+    - cron: '30 0,4,10,14,18,22 * * *'  # heures creuses DeepSeek (UTC)
   workflow_dispatch:         # déclenchement manuel possible
 
 jobs:
@@ -28,3 +28,5 @@ jobs:
           SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}
           DEEPSEEK_API_KEY:  ${{ secrets.DEEPSEEK_API_KEY }}
           ENCRYPTION_KEY:    ${{ secrets.ENCRYPTION_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}

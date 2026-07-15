@@ -4,6 +4,8 @@ const { generateContent } = require('./lib/deepseek');
 const { postToSocial } = require('./lib/social/index');
 const { spendCredit } = require('./lib/credits');
 const { repairJson } = require('./lib/json-helper');
+const { sendTelegram } = require('./lib/telegram');
+const { getAutomatedOffPeakBlockReason, formatUtcTime } = require('./lib/deepseek-pricing');
 
 const MAX_RETRIES = 3;
 
@@ -203,6 +205,16 @@ async function processQueue() {
 }
 
 async function run() {
+  const now = new Date();
+  const blockReason = getAutomatedOffPeakBlockReason(now);
+  if (blockReason) {
+    const time = formatUtcTime(now);
+    const message = `⏸️ <b>Social Poster reporté</b> à ${time} UTC : ${blockReason}. Aucun post social n'a été généré ni publié.`;
+    console.log(message);
+    await sendTelegram(message);
+    return;
+  }
+
   console.log('🚀 Social Poster démarré');
   await processQueue();
   console.log('\n✅ Social Poster terminé');
