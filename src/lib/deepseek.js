@@ -1,6 +1,8 @@
 const OpenAI = require('openai');
 const { recordDeepSeekRequest } = require('./deepseek-pricing');
 
+const DEEPSEEK_MODEL = 'deepseek-v4-flash';
+
 if (!process.env.DEEPSEEK_API_KEY) {
   console.warn('DEEPSEEK_API_KEY is missing.');
 }
@@ -13,21 +15,27 @@ const deepseek = new OpenAI({
 });
 
 /**
- * Génère un contenu via DeepSeek (V3 ou R1) avec retry manuel pour instabilité serveur
+ * Génère un contenu via DeepSeek V4 Flash avec retry manuel pour instabilité serveur.
+ * Les anciens alias sont normalisés pour ne jamais être envoyés à l'API.
  */
-async function generateContent(prompt, model = 'deepseek-chat', retries = 3) {
-  const isReasoner = model === 'deepseek-reasoner';
+async function generateContent(prompt, model = DEEPSEEK_MODEL, retries = 3, options = {}) {
+  const legacyThinking = model === 'deepseek-reasoner';
+  const normalizedModel = model === 'deepseek-chat' || legacyThinking ? DEEPSEEK_MODEL : model;
+  const thinkingEnabled = options.thinking === true || legacyThinking;
   
   const params = {
-    model: model,
+    model: normalizedModel,
     messages: [
       { role: 'system', content: 'You are an expert WordPress content writer and developer. You output strict JSON.' },
       { role: 'user', content: prompt }
     ],
-    max_tokens: isReasoner ? 60000 : 8192,
+    thinking: { type: thinkingEnabled ? 'enabled' : 'disabled' },
+    max_tokens: thinkingEnabled ? 60000 : 8192,
   };
 
-  if (!isReasoner) {
+  if (thinkingEnabled) {
+    params.reasoning_effort = options.reasoningEffort || 'high';
+  } else {
     params.temperature = 1.1;
   }
 
@@ -50,7 +58,7 @@ async function generateContent(prompt, model = 'deepseek-chat', retries = 3) {
 
       if (isRetryable && attempt < retries) {
         const delay = 5000 * attempt;
-        console.warn(`  ⚠️ DeepSeek (${model}) : ${error.message}. Tentative ${attempt}/${retries} dans ${delay/1000}s...`);
+        console.warn(`  ⚠️ DeepSeek (${normalizedModel}) : ${error.message}. Tentative ${attempt}/${retries} dans ${delay/1000}s...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -68,4 +76,4 @@ async function generateContent(prompt, model = 'deepseek-chat', retries = 3) {
   }
 }
 
-module.exports = { deepseek, generateContent };
+module.exports = { DEEPSEEK_MODEL, deepseek, generateContent };

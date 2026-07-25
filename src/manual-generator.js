@@ -5,7 +5,7 @@ const { searchBrave } = require('./lib/research');
 const { researchWithPerplexity } = require('./lib/perplexity');
 const { researchWithTavily } = require('./lib/tavily');
 const { buildLanguageBlock, INFOGRAPHIC_LABEL } = require('./lib/languages');
-const { generateContent: generateDeepSeek } = require('./lib/deepseek');
+const { DEEPSEEK_MODEL, generateContent: generateDeepSeek } = require('./lib/deepseek');
 const { classifyArticle } = require('./lib/gemini');
 const { generateRunwareImage } = require('./lib/runware');
 const { uploadImageToWordPress, publishPost, getCategories } = require('./lib/wordpress');
@@ -88,7 +88,7 @@ async function runManualJob() {
         .replace('{{brave_results}}', braveData)
         .replace('{{perplexity_results}}', expertResearch)
         .replace('{{language_block}}', languageBlock)
-        .replace(/\{\{current_date\}\}/g, currentDate), 'deepseek-reasoner');
+        .replace(/\{\{current_date\}\}/g, currentDate), DEEPSEEK_MODEL, 3, { thinking: true });
 
       const expertPersona = site.persona || {};
       const writerPrompt = EXPERT_WRITER_PROMPT
@@ -108,7 +108,7 @@ async function runManualJob() {
       for (let i = 1; i <= 2; i++) {
         console.log(`✍️ [EXPERT] Phase 3: Rédaction Premium - Tentative ${i}/2...`);
         try {
-          const raw = await generateDeepSeek(writerPrompt, 'deepseek-reasoner');
+          const raw = await generateDeepSeek(writerPrompt, DEEPSEEK_MODEL, 3, { thinking: true });
           const parsed = await parseAiJson(raw);
           if (parsed._isTruncated && i === 1) {
             console.warn("  ⚠️ Tronqué, relance...");
@@ -168,12 +168,12 @@ async function runManualJob() {
         .replace('{{persona_particularites}}', persona.particularities || '')
         .replace('{{humanization_level}}', persona.humanization_level || 'medium');
 
-      console.log('  🧠 [EXPRESS] Génération DeepSeek V3...');
+      console.log('  🧠 [EXPRESS] Génération DeepSeek V4 Flash...');
       let aiOutput = null;
       for (let i = 1; i <= 2; i++) {
-        const model = i === 1 ? 'deepseek-chat' : 'deepseek-reasoner';
-        if (i === 2) console.warn('  ⚠️ [EXPRESS] Troncature détectée — relance sur deepseek-reasoner...');
-        const raw = await generateDeepSeek(expressPrompt, model);
+        const thinking = i === 2;
+        if (thinking) console.warn('  ⚠️ [EXPRESS] Troncature détectée — relance V4 Flash avec thinking...');
+        const raw = await generateDeepSeek(expressPrompt, DEEPSEEK_MODEL, 3, { thinking });
         const parsed = await parseAiJson(raw);
         if (parsed._isTruncated && i === 1) continue;
         aiOutput = parsed;

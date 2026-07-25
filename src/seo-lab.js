@@ -5,7 +5,7 @@ const { supabase } = require('./lib/supabase');
 const { getBulkKeywordSuggestions, getKeywordsForSite } = require('./lib/dataforseo');
 const { getSiteInventory } = require('./lib/wordpress');
 const { decrypt } = require('./lib/encryption');
-const { generateContent: generateDeepSeek } = require('./lib/deepseek');
+const { DEEPSEEK_MODEL, generateContent: generateDeepSeek } = require('./lib/deepseek');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { enrichOpportunitiesWithGsc } = require('./lib/gsc');
@@ -45,7 +45,7 @@ async function generateSeeds(site, meta) {
   const prompt = `Définit les 2 meilleurs mots-clés racines (1 seul mot idéalement, max 2) pour ce site : ${site.name}. Spécialité : ${persona.specialty}. Home : ${meta?.title}. Réponds UNIQUEMENT par la liste, un par ligne. PAS DE GUILLEMETS.`;
 
   try {
-    const response = await generateDeepSeek(prompt, 'deepseek-chat');
+    const response = await generateDeepSeek(prompt, DEEPSEEK_MODEL);
     return response
       .replace(/mots_cles_racines:|mots_cles:|seeds:|axes:|racines:/gi, '')
       .replace(/["'“”«»]/g, '')
@@ -60,7 +60,7 @@ async function scoreKeywords(keywords, persona) {
   if (!keywords.length) return {};
   const prompt = `Note la pertinence (0-10) de ces mots-clés pour le persona ${persona.name} (Expert en ${persona.specialty}).\nMOTS-CLÉS :\n${keywords.join('\n')}\nRÉPONDS EN JSON : { \"scores\": [ { \"keyword\": \"...\", \"score\": 8 } ] }`;
   try {
-    const response = await generateDeepSeek(prompt, 'deepseek-chat');
+    const response = await generateDeepSeek(prompt, DEEPSEEK_MODEL);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return {};
     const parsed = JSON.parse(jsonMatch[0]);

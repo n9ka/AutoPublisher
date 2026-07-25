@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
-const { generateContent } = require('./lib/deepseek');
+const { DEEPSEEK_MODEL, generateContent } = require('./lib/deepseek');
 const { postToSocial } = require('./lib/social/index');
 const { spendCredit } = require('./lib/credits');
 const { repairJson } = require('./lib/json-helper');
@@ -43,7 +43,7 @@ Règles strictes :
 Réponds UNIQUEMENT avec ce JSON :
 {"text": "..."}`;
 
-  const raw = await generateContent(prompt, 'deepseek-chat');
+  const raw = await generateContent(prompt, DEEPSEEK_MODEL);
 
   let text = '';
   try {
