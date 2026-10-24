@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 // copycat-generator.js — Mode Copycat
 // Pipeline : Scrape URL → Recherche fresh data → Réécriture persona → Images → Publication
 require('dotenv').config();
@@ -184,12 +185,16 @@ async function runCopycatJob() {
   }
 
   const site = job.wordpress_sites;
+  const siteOperation = await beginSiteOperation(site.id, site.user_id, 'copycat_generation', jobId);
+  if (siteOperation.deferred) return { deferred: true };
+  try {
+
   const opts = job.custom_options || {};
   const sourceUrl = opts.url || job.source_url;
 
   if (!sourceUrl) {
     console.error('❌ URL source manquante dans custom_options.url');
-    process.exit(1);
+    process.exitCode = 1; return;
   }
 
   let wpPassword = site.wp_password;
@@ -311,11 +316,11 @@ async function runCopycatJob() {
       if (!url) { uploadedSectionUrls.push(null); continue; }
       let media = null;
       if (!wafBlocked) {
-        media = await uploadImageToWordPress(
+        media = await siteOperation.runExternalEffect(() => uploadImageToWordPress(
           site.url, site.wp_user, wpPassword,
           url, sectionImageAlts[idx] || `${searchKeyword} — image ${idx + 1}`,
           site.connection_mode, site.bridge_key
-        );
+        ), { requireResult: true });
         if (media?.is_bridge) wafBlocked = true;
       }
       if (!media?.url || media?.is_bridge) {
@@ -337,13 +342,13 @@ async function runCopycatJob() {
     const categories = await getCategories({ ...site, wp_password: wpPassword });
     const categoryId = await classifyArticle(wp.title, wp.excerpt, categories);
 
-    const featuredMedia = wafBlocked ? null : await uploadImageToWordPress(
+    const featuredMedia = wafBlocked ? null : await siteOperation.runExternalEffect(() => uploadImageToWordPress(
       site.url, site.wp_user, wpPassword,
       featuredImageUrl, wp.title,
       site.connection_mode, site.bridge_key
-    );
+    ), { requireResult: true });
 
-    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, {
+    const pubResult = await siteOperation.runExternalEffect(() => publishPost({ ...site, wp_password: wpPassword }, {
       title: wp.title,
       content: finalHtml,
       excerpt: wp.excerpt,
@@ -355,7 +360,7 @@ async function runCopycatJob() {
       featured_media_url: featuredMedia?.url || featuredImageUrl,
       date: job.scheduled_at || null,
       section_image_urls: sectionReplaceMap.length > 0 ? sectionReplaceMap : undefined,
-    });
+    }), { requireResult: true });
 
     await supabase.from('articles_queue').update({
       status: 'published',
@@ -382,15 +387,19 @@ async function runCopycatJob() {
     console.log(`✅ [COPYCAT] Succès : ${pubResult.link}`);
     const repairNote = aiOutput._jsonRepaired ? '\n⚠️ JSON réparé par IA' : '';
     await sendTelegram(`✅ <b>[COPYCAT]</b> Article publié\n• <a href="${pubResult.link}">${wp.title}</a>\n• ${site.name}${repairNote}${getDeepSeekPeakTelegramNote()}`);
-    process.exit(0);
+    process.exitCode = 0; return;
 
   } catch (error) {
     console.error(`❌ [COPYCAT] Erreur : ${error.message}`);
     if (creditsSpent > 0) await refundCredit(site.user_id, creditsSpent, jobId);
     await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
     await sendTelegram(`❌ <b>[COPYCAT]</b> Échec\n• ${job?.source_title || sourceUrl || jobId}\n• ${site?.name || '?'}\n└ ${error.message}`);
-    process.exit(1);
+    process.exitCode = 1; return;
+  }
+
+  } finally {
+    await siteOperation.finish();
   }
 }
 
-runCopycatJob();
+runCopycatJob().catch(error => { console.error(error.message); process.exitCode = 1; });

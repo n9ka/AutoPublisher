@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 require('dotenv').config();
 
 // Empêche les rejections non gérées du SDK Google AI de crasher le process
@@ -214,6 +215,10 @@ async function detect() {
   if (siteError) return console.error(siteError);
 
   for (const site of sites) {
+    const siteOperation = await beginSiteOperation(site.id, site.user_id, 'detector', `detect:${site.id}`);
+    if (siteOperation.deferred) continue;
+    try {
+
     console.log(`\n--- Site : ${site.name} ---`);
     try {
 
@@ -337,7 +342,11 @@ async function detect() {
     } catch (siteErr) {
       console.error(`  ❌ [SITE ${site.name}] Erreur inattendue — site ignoré: ${siteErr?.message ?? String(siteErr)}`);
     }
-  }
+
+    } finally {
+      await siteOperation.finish();
+    }
+}
 
   console.log('\n🏁 Fin détection.');
 

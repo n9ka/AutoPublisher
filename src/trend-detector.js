@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { getDailyTrends } = require('./lib/trends');
@@ -195,6 +196,10 @@ async function detectTrends() {
 
   for (const spy of spies) {
     const site = spy.wordpress_sites;
+    const siteOperation = await beginSiteOperation(site.id, site.user_id, 'trend_detector', `trend:${spy.id}`);
+    if (siteOperation.deferred) continue;
+    try {
+
     console.log(`\n--- Espion pour : ${site.name} (Catégorie: ${spy.category}) ---`);
 
     // 1. Quota hebdomadaire lissé, identique au métronome RSS.
@@ -330,7 +335,7 @@ async function detectTrends() {
         console.log(`    Ø Sujet déjà couvert récemment (titre proche) : "${trend.title}"`);
         continue;
       }
-      
+
       // 1. Anti-doublon Exact (File d'attente)
       const { data: inQueue } = await supabase
         .from('articles_queue')
@@ -352,7 +357,7 @@ async function detectTrends() {
         console.log(`    Ø Embedding indisponible, insertion bloquée pour éviter doublon : "${trend.title}"`);
         continue;
       }
-      
+
       const { data: matches, error: matchError } = await supabase.rpc('match_processed_articles', {
         query_embedding: embedding,
         match_threshold: TREND_SEMANTIC_MATCH_THRESHOLD,
@@ -367,7 +372,7 @@ async function detectTrends() {
         console.log(`    Ø Sujet sémantiquement trop proche déjà publié : "${matches[0].source_title}" (Similitude: ${Math.round(matches[0].similarity * 100)}%)`);
         continue;
       }
-      
+
       // 3. Enrichissement recherche : Freudix fournit les métriques SEO,
       // LangSearch les sources fraîches et Tavily n'intervient que si elles sont faibles.
       const freudixMetrics = await getFreudixTrendMetrics(trend.title);
@@ -393,13 +398,17 @@ async function detectTrends() {
           .from('trend_spies')
           .update({ last_trend_detection_at: new Date().toISOString() })
           .eq('id', spy.id);
-        
+
         added++;
       } else if (error) {
         console.error(`❌ Erreur insertion : ${error.message}`);
       }
     }
-  }
+
+    } finally {
+      await siteOperation.finish();
+    }
+}
   console.log('\n🏁 Fin Trend Spy.');
 }
 

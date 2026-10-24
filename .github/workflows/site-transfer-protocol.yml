@@ -1,0 +1,30 @@
+name: Verify Site Transfer Protocol
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/site-operations.js'
+      - 'src/check-site-operation-endpoint.js'
+      - 'test/site-transfer-protocol.test.cjs'
+      - '.github/workflows/site-transfer-protocol.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Test operation protocol without publishing
+        run: node --test test/site-transfer-protocol.test.cjs
+      - name: Verify deployed endpoint authentication without a reservation
+        run: node src/check-site-operation-endpoint.js
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

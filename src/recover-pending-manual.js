@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 // recover-pending-manual.js — Relance les jobs manual bloqués en pending
 // Usage: node src/recover-pending-manual.js [--dry-run]
 require('dotenv').config();
@@ -52,6 +53,9 @@ async function recover() {
 
   let ok = 0, fail = 0;
   for (const job of jobs) {
+    const siteOperation = await beginSiteOperation(job.wordpress_site_id, null, 'recover_pending', job.id);
+    if (siteOperation.deferred) continue;
+    try {
     const workflowFile = job.generation_mode === 'custom' ? 'custom-generator.yml' : 'manual-generator.yml';
     try {
       await axios.post(
@@ -75,6 +79,7 @@ async function recover() {
       }
       fail++;
     }
+    } finally { await siteOperation.finish(); }
   }
 
   console.log(`\n🏁 Terminé : ${ok} redispatch(s) OK, ${fail} échec(s).`);

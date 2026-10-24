@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { DEEPSEEK_MODEL, generateContent } = require('./lib/deepseek');
@@ -77,7 +78,7 @@ async function processQueue() {
     .select(`
       *,
       wordpress_sites (
-        id, name, persona,
+        id, user_id, name, persona,
         site_social_config (
           id, channel_ids, posting_enabled,
           user_social_accounts (
@@ -106,16 +107,24 @@ async function processQueue() {
   console.log(`📋 ${jobs.length} post(s) à traiter.`);
 
   for (const job of jobs) {
+    // Transferred announcements stay failed until the administrator explicitly
+    // validates them. Also refuse a manually requeued row retaining this marker.
+    if (typeof job.error === 'string' && job.error.startsWith('ASPY_TRANSFER_REVIEW:')) {
+      console.log(`  ⏸️ Job ${job.id} : validation des annonces historiques en attente.`);
+      continue;
+    }
+    const siteOperation = await beginSiteOperation(job.site_id, job.wordpress_sites?.user_id, 'social_post', job.id);
+    if (siteOperation.deferred) continue;
+    try {
+
     const site        = job.wordpress_sites;
     const siteConfig  = site?.site_social_config?.[0];
     const account     = siteConfig?.user_social_accounts;
 
     if (!siteConfig || !account) {
-      console.warn(`  ⚠️  Job ${job.id} : config sociale manquante pour le site.`);
-      await supabase
-        .from('social_queue')
-        .update({ status: 'failed', error: 'Config sociale manquante' })
-        .eq('id', job.id);
+      // A transfer intentionally detaches the previous owner's social account.
+      // Keep historical jobs pending until the new owner reconnects a channel.
+      console.warn(`  ⏸️ Job ${job.id} : publication reportée, connexion sociale à configurer.`);
       continue;
     }
 
@@ -151,7 +160,7 @@ async function processQueue() {
       const text = await generatePostText(article ?? {}, site);
       console.log(`  ✍️  Texte généré (${text.length} chars)`);
 
-      const results = await postToSocial(siteConfig, account, text);
+      const results = await siteOperation.runExternalEffect(() => postToSocial(siteConfig, account, text));
       const postIds = results.map(r => r.postId).filter(Boolean).join(',');
       console.log(`  ✅ Posté — IDs: ${postIds}`);
 
@@ -201,7 +210,11 @@ async function processQueue() {
         console.log(`  🚫 Job ${job.id} marqué failed après ${MAX_RETRIES} tentatives.`);
       }
     }
-  }
+
+    } finally {
+      await siteOperation.finish();
+    }
+}
 }
 
 async function run() {

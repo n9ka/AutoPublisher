@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 // manual-generator.js - Version 2.2 (Expert vs Express - Anti-Bug)
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
@@ -46,6 +47,10 @@ async function runManualJob() {
   }
 
   const site = job.wordpress_sites;
+  const siteOperation = await beginSiteOperation(site.id, site.user_id, 'manual_generation', jobId);
+  if (siteOperation.deferred) return { deferred: true };
+  try {
+
   const mode = job.generation_mode || 'express';
   let creditsSpent = 0;
   console.log(`🎯 Mode détecté : ${mode.toUpperCase()}`);
@@ -197,7 +202,7 @@ async function runManualJob() {
 
     console.log('🖼️ Images...');
     const featuredImageUrl = await generateRunwareImage(aiMetadata.image_generation_prompt, "photo");
-    const featuredMedia = await uploadImageToWordPress(site.url, site.wp_user, wpPassword, featuredImageUrl, aiMetadata.title, site.connection_mode, site.bridge_key);
+    const featuredMedia = await siteOperation.runExternalEffect(() => uploadImageToWordPress(site.url, site.wp_user, wpPassword, featuredImageUrl, aiMetadata.title, site.connection_mode, site.bridge_key), { requireResult: true });
 
     const isBridgeMode = site.connection_mode === 'bridge_plugin';
     const infographicAlt = `${INFOGRAPHIC_LABEL[outputLanguage] || 'Infographic'} : ${job.source_title}`;
@@ -210,7 +215,7 @@ async function runManualJob() {
         // qui se charge du sideload + alt text côté serveur WordPress.
         infoImgSrc = infographicUrl;
       } else {
-        const infoMedia = await uploadImageToWordPress(site.url, site.wp_user, wpPassword, infographicUrl, infographicAlt, 'rest_api', site.bridge_key);
+        const infoMedia = await siteOperation.runExternalEffect(() => uploadImageToWordPress(site.url, site.wp_user, wpPassword, infographicUrl, infographicAlt, 'rest_api', site.bridge_key), { requireResult: true });
         if (infoMedia?.url) infoImgSrc = infoMedia.url;
       }
 
@@ -247,7 +252,7 @@ async function runManualJob() {
       console.log('  🗂️  Payload de publication sauvegardé dans le cache de retry.');
     }
 
-    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, publishPayload);
+    const pubResult = await siteOperation.runExternalEffect(() => publishPost({ ...site, wp_password: wpPassword }, publishPayload), { requireResult: true });
 
     if (isPublishCacheEnabled()) {
       await markPublishSucceeded(jobId, pubResult.link);
@@ -274,7 +279,7 @@ async function runManualJob() {
     console.log(`✅ Succès : ${pubResult.link}`);
     const repairNote = jsonRepaired ? '\n⚠️ JSON réparé par IA (OpenRouter)' : '';
     await sendTelegram(`✅ <b>[SEO ${mode.toUpperCase()}]</b> Article publié\n• <a href="${pubResult.link}">${aiMetadata.title}</a>\n• ${site.name}${repairNote}${getDeepSeekPeakTelegramNote()}`);
-    process.exit(0);
+    process.exitCode = 0; return;
 
   } catch (error) {
     console.error(`❌ Erreur : ${error.message}`);
@@ -284,7 +289,11 @@ async function runManualJob() {
     }
     await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
     await sendTelegram(`❌ <b>[SEO ${mode.toUpperCase()}]</b> Échec\n• ${job?.source_title || jobId}\n• ${site?.name || '?'}\n└ ${error.message}`);
-    process.exit(1);
+    process.exitCode = 1; return;
+  }
+
+  } finally {
+    await siteOperation.finish();
   }
 }
 
@@ -317,4 +326,4 @@ async function parseAiJson(text) {
   }
 }
 
-runManualJob();
+runManualJob().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -35,6 +35,7 @@ async function processBatch(config, logger = console) {
     claimed: 0,
     published: 0,
     failed: 0,
+    deferred: 0,
     publishedLinks: [],
   };
 
@@ -53,6 +54,10 @@ async function processBatch(config, logger = console) {
 
     try {
       const result = await retryOneRow(row, logger);
+      if (result?.deferred) {
+        summary.deferred += 1;
+        continue;
+      }
       summary.published += 1;
       if (result?.link) {
         summary.publishedLinks.push(result.link);

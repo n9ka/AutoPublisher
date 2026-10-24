@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 require('dotenv').config();
 const { supabase } = require('./lib/supabase');
 const { scrapeArticle } = require('./lib/scraper');
@@ -18,19 +19,22 @@ const { enqueueSocialPost } = require('./lib/social/enqueue');
 const { sendTelegram } = require('./lib/telegram');
 const { savePublishPayload, markPublishFailed, markPublishSucceeded, isPublishCacheEnabled } = require('./lib/publish-cache');
 
-async function processNextArticle() {
+async function processNextArticle(deferredSites = new Set()) {
   if (process.env.RUNNER_PUBLIC_IP) {
     console.log(`🌍 Runner public IP: ${process.env.RUNNER_PUBLIC_IP}`);
   }
   console.log('⚙️  Recherche d\'un article en attente...');
 
-  const { data: queueItem, error: queueError } = await supabase
+  let queueQuery = supabase
     .from('articles_queue')
     .select('*, wordpress_sites(*)')
     .eq('status', 'pending')
-    .in('source_type', ['rss', 'trend']) // On ignore les jobs 'manual'
-    .limit(1)
-    .single();
+    .in('source_type', ['rss', 'trend']); // On ignore les jobs 'manual'
+  if (deferredSites.size) {
+    // Values are site UUIDs returned by the database, never external input.
+    queueQuery = queueQuery.not('wordpress_site_id', 'in', `(${[...deferredSites].join(',')})`);
+  }
+  const { data: queueItem, error: queueError } = await queueQuery.limit(1).single();
 
   if (queueError || !queueItem) {
     console.log('💤 Aucun article en attente.');
@@ -39,6 +43,10 @@ async function processNextArticle() {
 
   const articleId = queueItem.id;
   const site = queueItem.wordpress_sites;
+  const siteOperation = await beginSiteOperation(site.id, site.user_id, 'article_processor', articleId);
+  if (siteOperation.deferred) return { deferred: true, siteId: site.id };
+  try {
+
   const userId = site.user_id;
   const isTrend = queueItem.source_type === 'trend';
   let creditsSpent = 0; // Track pour le refund
@@ -185,7 +193,7 @@ async function processNextArticle() {
     }
 
     if (imageUrl) {
-      const media = await uploadImageToWordPress(
+      const media = await siteOperation.runExternalEffect(() => uploadImageToWordPress(
         site.url, 
         site.wp_user, 
         wpPassword, 
@@ -193,7 +201,7 @@ async function processNextArticle() {
         wpData.title,
         site.connection_mode,
         site.bridge_key
-      );
+      ), { requireResult: true });
       featuredMediaId = media ? media.id : null;
       featuredMediaUrl = media ? media.url : null;
 
@@ -245,7 +253,7 @@ async function processNextArticle() {
       }
 
       const secureSiteConfig = { ...site, wp_password: wpPassword };
-      const pubResult = await publishPost(secureSiteConfig, postPayload);
+      const pubResult = await siteOperation.runExternalEffect(() => publishPost(secureSiteConfig, postPayload), { requireResult: true });
       console.log(`  ✅ PUBLIÉ ! URL: ${pubResult.link}`);
 
       if (isPublishCacheEnabled()) {
@@ -317,6 +325,10 @@ async function processNextArticle() {
       .eq('id', articleId);
     return { status: 'failed', title: queueItem.source_title, siteName: site?.name || '?', sourceType: queueItem.source_type, error: error.message };
   }
+
+  } finally {
+    await siteOperation.finish();
+  }
 }
 
 async function parseAiJson(text) {
@@ -367,11 +379,16 @@ async function parseAiJson(text) {
   let hasMore = true;
   const published = [];
   const failed = [];
+  const deferredSites = new Set();
 
   while (hasMore && (published.length + failed.length) < MAX_ARTICLES_PER_RUN) {
-    const result = await processNextArticle();
+    const result = await processNextArticle(deferredSites);
     if (result === null) {
       hasMore = false;
+    } else if (result.deferred) {
+      deferredSites.add(result.siteId);
+      // A frozen site must not starve other sites or be selected forever.
+      if (deferredSites.size >= 1000) hasMore = false;
     } else {
       if (result.status === 'published') published.push(result);
       else if (result.status === 'failed') failed.push(result);

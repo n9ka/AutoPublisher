@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 /**
  * gsc-sync.js — Sync nocturne des données GSC vers gsc_daily_metrics
  * Usage : node src/gsc-sync.js
@@ -150,6 +151,10 @@ async function syncAllSites() {
   let totalRows = 0;
 
   for (const mapping of mappings) {
+    const siteOperation = await beginSiteOperation(mapping.wordpress_site_id, mapping.wordpress_sites?.user_id, 'gsc_sync', `gsc:${mapping.id}`);
+    if (siteOperation.deferred) continue;
+    try {
+
     const siteName = mapping.wordpress_sites?.name ?? mapping.wordpress_site_id;
     const userId = mapping.wordpress_sites?.user_id;
 
@@ -188,7 +193,11 @@ async function syncAllSites() {
       console.error(`  ❌ ${siteName} — ${err.message}`);
       failed++;
     }
-  }
+
+    } finally {
+      await siteOperation.finish();
+    }
+}
 
   console.log(`\n[gsc-sync] Terminé : ${synced}/${mappings.length} sites OK, ${failed} erreurs, ${totalRows} rows upsertés`);
 }

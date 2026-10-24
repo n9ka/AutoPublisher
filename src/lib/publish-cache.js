@@ -184,11 +184,12 @@ async function claimNextPublishPayload({ statuses = ['failed'], siteUrls = null,
     const { rows } = await db.query(
       `
         with candidate as (
-          select id
+          select id, publish_status as previous_publish_status
           from publish_retry_cache
           where publish_status = any($1::text[])
             and attempts < $2
             and expires_at > now()
+            and updated_at <= now()
             and ($3::text[] is null or site_url = any($3::text[]))
             and ($4::text[] is null or source_kind = any($4::text[]))
           order by updated_at asc
@@ -200,7 +201,7 @@ async function claimNextPublishPayload({ statuses = ['failed'], siteUrls = null,
             updated_at = now()
         from candidate
         where prc.id = candidate.id
-        returning prc.*
+        returning prc.*, candidate.previous_publish_status
       `,
       [
         normalizedStatuses,
@@ -217,7 +218,22 @@ async function claimNextPublishPayload({ statuses = ['failed'], siteUrls = null,
   }
 }
 
+async function deferPublishPayload(row, delaySeconds = 60) {
+  const db = getPool();
+  if (!db) throw new Error('Publish cache unavailable while deferring retry');
+  const status = row.previous_publish_status || (row.publish_status === 'retrying' ? 'failed' : row.publish_status);
+  const { rowCount } = await db.query(
+    `update publish_retry_cache set publish_status = $2,
+       updated_at = now() + ($3 * interval '1 second')
+     where job_id = $1 and publish_status = 'retrying'`,
+    [row.job_id, status, delaySeconds]
+  );
+  // Explicit retries may not have claimed a row. Leave their status untouched.
+  return rowCount > 0;
+}
+
 module.exports = {
+  deferPublishPayload,
   isPublishCacheEnabled,
   savePublishPayload,
   markPublishFailed,

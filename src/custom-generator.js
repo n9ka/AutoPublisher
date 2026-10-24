@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 // custom-generator.js — Mode Personnalisé (Custom SEO)
 // Pipeline 4 phases : Recherche → Brief → Rédaction → Médias → Publication
 require('dotenv').config();
@@ -164,11 +165,15 @@ async function runCustomJob() {
   }
 
   const site = job.wordpress_sites;
+  const siteOperation = await beginSiteOperation(site.id, site.user_id, 'custom_generation', jobId);
+  if (siteOperation.deferred) return { deferred: true };
+  try {
+
   const opts = job.custom_options;
 
   if (!opts) {
     console.error('❌ custom_options manquant dans le job');
-    process.exit(1);
+    process.exitCode = 1; return;
   }
 
   // Chargement des modèles LLM depuis la DB
@@ -177,7 +182,7 @@ async function runCustomJob() {
 
   if (!briefModel || !writingModel) {
     console.error('❌ Modèle LLM introuvable en DB');
-    process.exit(1);
+    process.exitCode = 1; return;
   }
 
   console.log(`  🤖 Brief: ${briefModel.label} | Rédaction: ${writingModel.label}`);
@@ -435,11 +440,11 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
         if (!url) { uploadedSectionUrls.push(null); continue; }
         let media = null;
         if (!wafBlocked) {
-          media = await uploadImageToWordPress(
+          media = await siteOperation.runExternalEffect(() => uploadImageToWordPress(
             site.url, site.wp_user, wpPassword,
             url, sectionImageAltTexts[idx] || `${keyword} — image ${idx + 1}`,
             site.connection_mode, site.bridge_key
-          );
+          ), { requireResult: true });
           if (media?.is_bridge) wafBlocked = true;
         }
         if (!media?.url || media?.is_bridge) {
@@ -466,7 +471,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       if (isBridgeMode || wafBlocked) {
         infoImgSrc = infographicUrl; // bridge gère le sideload
       } else {
-        const infoMedia = await uploadImageToWordPress(site.url, site.wp_user, wpPassword, infographicUrl, infographicAlt, 'rest_api', site.bridge_key);
+        const infoMedia = await siteOperation.runExternalEffect(() => uploadImageToWordPress(site.url, site.wp_user, wpPassword, infographicUrl, infographicAlt, 'rest_api', site.bridge_key), { requireResult: true });
         if (infoMedia?.url && !infoMedia?.is_bridge) infoImgSrc = infoMedia.url;
         else { infoImgSrc = infographicUrl; wafBlocked = true; }
       }
@@ -487,11 +492,11 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     const categories = await getCategories({ ...site, wp_password: wpPassword });
     const categoryId = await classifyArticle(aiOutput.metadata.title, aiOutput.metadata.excerpt, categories);
 
-    const featuredMedia = wafBlocked ? null : await uploadImageToWordPress(
+    const featuredMedia = wafBlocked ? null : await siteOperation.runExternalEffect(() => uploadImageToWordPress(
       site.url, site.wp_user, wpPassword,
       featuredImageUrl, aiOutput.metadata.title,
       site.connection_mode, site.bridge_key
-    );
+    ), { requireResult: true });
 
     const publishPayload = {
       title: aiOutput.metadata.title,
@@ -524,7 +529,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
       console.log('  🗂️  Payload de publication sauvegardé dans le cache de retry.');
     }
 
-    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, publishPayload);
+    const pubResult = await siteOperation.runExternalEffect(() => publishPost({ ...site, wp_password: wpPassword }, publishPayload), { requireResult: true });
 
     if (isPublishCacheEnabled()) {
       await markPublishSucceeded(jobId, pubResult.link);
@@ -569,7 +574,7 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     console.log(`✅ [CUSTOM] Succès : ${pubResult.link}`);
     const repairNote = aiOutput._jsonRepaired ? '\n⚠️ JSON réparé par IA (OpenRouter)' : '';
     await sendTelegram(`✅ <b>[SEO CUSTOM]</b> Article publié\n• <a href="${pubResult.link}">${aiOutput.metadata.title}</a>\n• ${site.name}${repairNote}${getDeepSeekPeakTelegramNote()}`);
-    process.exit(0);
+    process.exitCode = 0; return;
 
   } catch (error) {
     console.error(`❌ [CUSTOM] Erreur : ${error.message}`);
@@ -579,8 +584,12 @@ Rédige UNIQUEMENT les blocs Gutenberg manquants (pas le JSON complet, juste le 
     }
     await supabase.from('articles_queue').update({ status: 'failed', error_message: error.message }).eq('id', jobId);
     await sendTelegram(`❌ <b>[SEO CUSTOM]</b> Échec\n• ${job?.source_title || jobId}\n• ${site?.name || '?'}\n└ ${error.message}`);
-    process.exit(1);
+    process.exitCode = 1; return;
+  }
+
+  } finally {
+    await siteOperation.finish();
   }
 }
 
-runCustomJob();
+runCustomJob().catch(error => { console.error(error.message); process.exitCode = 1; });

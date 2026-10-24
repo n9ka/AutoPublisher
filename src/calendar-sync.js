@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { supabase } = require('./lib/supabase');
@@ -9,6 +10,10 @@ function createDataClient() {
 }
 
 async function syncSite(site, dataClient, afterDate) {
+    const siteOperation = await beginSiteOperation(site.id, site.user_id, 'calendar_sync', `calendar:${site.id}`);
+    if (siteOperation.deferred) return { deferred: true };
+    try {
+
   console.log(`  🔄 Sync [${site.name}]...`);
 
   let wpPassword = site.wp_password;
@@ -58,6 +63,10 @@ async function syncSite(site, dataClient, afterDate) {
   } else {
     console.log(`  ✅ [${site.name}] ${rows.length} post(s) mis en cache.`);
   }
+
+    } finally {
+      await siteOperation.finish();
+    }
 }
 
 (async () => {

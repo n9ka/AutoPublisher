@@ -1,3 +1,4 @@
+const { beginSiteOperation } = require('./lib/site-operations');
 // src/seo-lab.js - Discovery Engine
 // v2.5.1
 require('dotenv').config();
@@ -76,6 +77,10 @@ async function runDiscovery(siteId) {
 
   const { data: site } = await supabase.from('wordpress_sites').select('*').eq('id', siteId).single();
   if (!site) process.exit(1);
+  const siteOperation = await beginSiteOperation(site.id, site.user_id, 'seo_lab_scan', `scan:${siteId}`);
+  if (siteOperation.deferred) return { deferred: true };
+  try {
+
 
   let wpPassword = site.wp_password;
   if (site.wp_password_iv) {
@@ -167,10 +172,17 @@ async function runDiscovery(siteId) {
   await supabase.from('seo_opportunities').insert(opportunities);
   await supabase.from('wordpress_sites').update({ is_lab_scanning: false }).eq('id', siteId);
   console.log(`🚀 Discovery complete.`);
-  process.exit(0);
+  process.exitCode = 0; return;
+
+  } catch (error) {
+    await supabase.from('wordpress_sites').update({ is_lab_scanning: false }).eq('id', siteId);
+    throw error;
+  } finally {
+    await siteOperation.finish();
+  }
 }
 
 runDiscovery(process.argv[2]).catch(async err => {
-  await supabase.from('wordpress_sites').update({ is_lab_scanning: false }).eq('id', process.argv[2]);
+  console.error(err.message);
   process.exit(1);
 });

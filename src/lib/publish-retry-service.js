@@ -1,10 +1,11 @@
+const { beginSiteOperation } = require('./site-operations');
 require('dotenv').config();
 const { supabase } = require('./supabase');
 const { decrypt } = require('./encryption');
 const { publishPost, uploadImageToWordPress } = require('./wordpress');
 const { enqueueSocialPost } = require('./social/enqueue');
 const { upsertToWpCache } = require('./supabase-data');
-const { getPublishPayload, listPublishPayloads, markPublishFailed, markPublishSucceeded, claimNextPublishPayload, isPublishCacheEnabled } = require('./publish-cache');
+const { deferPublishPayload, getPublishPayload, listPublishPayloads, markPublishFailed, markPublishSucceeded, claimNextPublishPayload, isPublishCacheEnabled } = require('./publish-cache');
 const { spendCredit, refundCredit } = require('./credits');
 
 function getSiteBaseUrl(site) {
@@ -25,11 +26,11 @@ function replaceAllOccurrences(content, from, to) {
   return content.split(from).join(to);
 }
 
-async function tryUploadRetryMedia(site, wpPassword, imageUrl, altText, label, logger = console) {
+async function tryUploadRetryMedia(site, wpPassword, imageUrl, altText, label, siteOperation, logger = console) {
   if (!imageUrl) return null;
 
   try {
-    const media = await uploadImageToWordPress(
+    const media = await siteOperation.runExternalEffect(() => uploadImageToWordPress(
       site.url,
       site.wp_user,
       wpPassword,
@@ -37,7 +38,7 @@ async function tryUploadRetryMedia(site, wpPassword, imageUrl, altText, label, l
       altText,
       site.connection_mode,
       site.bridge_key
-    );
+    ), { requireResult: true });
 
     if (media?.id || media?.url) {
       logger.log(`🖼️ Retry: ${label} réuploadé${media.id ? ` (media_id=${media.id})` : ''}.`);
@@ -52,7 +53,7 @@ async function tryUploadRetryMedia(site, wpPassword, imageUrl, altText, label, l
   }
 }
 
-async function rehydratePublishPayload(site, job, publishPayload, wpPassword, logger = console) {
+async function rehydratePublishPayload(site, job, publishPayload, wpPassword, siteOperation, logger = console) {
   const hydratedPayload = {
     ...publishPayload,
     content: publishPayload.content || '',
@@ -67,6 +68,7 @@ async function rehydratePublishPayload(site, job, publishPayload, wpPassword, lo
       hydratedPayload.featured_media_url,
       featuredAlt,
       'image de couverture',
+      siteOperation,
       logger
     );
 
@@ -84,6 +86,7 @@ async function rehydratePublishPayload(site, job, publishPayload, wpPassword, lo
       hydratedPayload.infographic_url,
       infographicAlt,
       'infographie',
+      siteOperation,
       logger
     );
 
@@ -117,6 +120,7 @@ async function rehydratePublishPayload(site, job, publishPayload, wpPassword, lo
         originalUrl,
         altText || hydratedPayload.title || job.source_title || 'Section image',
         'image de section',
+        siteOperation,
         logger
       );
 
@@ -248,6 +252,19 @@ async function applySuccessEffects(sourceKind, job, site, payload, pubResult) {
 async function retryOneRow(row, logger = console) {
   const job = await loadJob(row.job_id);
   const site = job.wordpress_sites;
+  let siteOperation;
+  try {
+    siteOperation = await beginSiteOperation(site.id, site.user_id, 'publish_retry', row.job_id);
+  } catch (error) {
+    await deferPublishPayload(row);
+    throw error;
+  }
+  if (siteOperation.deferred) {
+    await deferPublishPayload(row);
+    return { deferred: true, row };
+  }
+  try {
+
   const wpPassword = getWpPassword(site);
   const payload = row.payload;
   const retryMeta = payload._retry_meta || {};
@@ -263,8 +280,8 @@ async function retryOneRow(row, logger = console) {
       logger.log(`💳 Retry: ${creditsToCharge} crédit(s) re-débités.`);
     }
 
-    const hydratedPayload = await rehydratePublishPayload(site, job, publishPayload, wpPassword, logger);
-    const pubResult = await publishPost({ ...site, wp_password: wpPassword }, hydratedPayload);
+    const hydratedPayload = await rehydratePublishPayload(site, job, publishPayload, wpPassword, siteOperation, logger);
+    const pubResult = await siteOperation.runExternalEffect(() => publishPost({ ...site, wp_password: wpPassword }, hydratedPayload), { requireResult: true });
     await applySuccessEffects(row.source_kind, job, site, hydratedPayload, pubResult);
     await markPublishSucceeded(row.job_id, pubResult.link);
 
@@ -286,6 +303,10 @@ async function retryOneRow(row, logger = console) {
     await markPublishFailed(row.job_id, error.message);
     logger.error(`❌ Retry échoué | job=${row.job_id} | ${error.message}`);
     throw error;
+  }
+
+  } finally {
+    await siteOperation.finish();
   }
 }
 

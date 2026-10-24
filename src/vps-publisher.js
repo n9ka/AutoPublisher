@@ -1,3 +1,4 @@
+const { beginVpsSiteOperation } = require('./lib/vps-site-operations');
 /**
  * vps-publisher.js — Publication WordPress depuis le VPS (sans Supabase)
  *
@@ -14,6 +15,7 @@
  *     vps-publisher.js        ← ce fichier
  *     lib/wordpress.js        ← copié depuis AutoPublisher/src/lib/wordpress.js
  *     lib/runware.js          ← copié depuis AutoPublisher/src/lib/runware.js
+ *     lib/vps-site-operations.js ← requis pour le protocole de transfert sûr
  *     .env
  *     package.json
  */
@@ -63,18 +65,7 @@ function parseArgs() {
   return { site: get('site'), slug: get('slug'), status, scheduledDate };
 }
 
-async function fetchSiteConfig(siteArg) {
-  const apiUrl = process.env.ASPY_API_URL || 'https://aspy.fr';
-  const apiKey = process.env.CATALOGUE_API_KEY;
-  if (!apiKey) throw new Error('CATALOGUE_API_KEY manquant dans .env');
 
-  const res = await axios.get(`${apiUrl}/api/vps/site-config`, {
-    params: { site: siteArg },
-    headers: { 'x-api-key': apiKey },
-    timeout: 10000,
-  });
-  return res.data;
-}
 
 const GENERIC_CAT_RE = /actualit|divers|g[eé]n[eé]ral|news|autres|uncategor|non.?class/i;
 
@@ -154,12 +145,20 @@ async function main() {
   // 2. Récupérer les credentials WP depuis l'API Aspy.fr
   console.log('🔑 Récupération credentials...');
   let site;
+  let siteOperation;
   try {
-    site = await fetchSiteConfig(siteArg);
+    const acquired = await beginVpsSiteOperation(siteArg);
+    if (acquired.deferred) {
+      console.log('⏸️ Publication reportée : transfert ou automatismes suspendus. Fichiers conservés.');
+      return { deferred: true };
+    }
+    site = acquired.config;
+    siteOperation = acquired.operation;
   } catch (err) {
     console.error(`❌ Impossible de récupérer les credentials : ${err.message}`);
     process.exit(1);
   }
+  try {
   console.log(`🌐 Site : ${site.wp_url} (mode: ${site.connection_mode})`);
 
   const siteConfig = {
@@ -201,11 +200,11 @@ async function main() {
   let featuredMedia = null;
   if (imageUrl) {
     console.log('⬆️  Upload image WordPress...');
-    featuredMedia = await uploadImageToWordPress(
+    featuredMedia = await siteOperation.runExternalEffect(() => uploadImageToWordPress(
       site.wp_url, site.wp_user, site.wp_password,
       imageUrl, imageAlt,
       site.connection_mode, site.bridge_key
-    );
+    ), { requireResult: true });
     if (featuredMedia) console.log(`   → Media ID: ${featuredMedia.id}`);
   } else {
     console.warn('⚠️  Aucune image générée — publication sans image à la une.');
@@ -215,7 +214,7 @@ async function main() {
   const statusLabel = scheduledDate ? `planifié le ${scheduledDate}` : status;
   console.log(`📤 Publication (${statusLabel})...`);
 
-  const result = await publishPost(siteConfig, {
+  const result = await siteOperation.runExternalEffect(() => publishPost(siteConfig, {
     title: metadata.title,
     content: htmlContent,
     excerpt: metadata.excerpt || '',
@@ -226,7 +225,7 @@ async function main() {
     categories: categoryId ? [categoryId] : [],
     featured_media_id: featuredMedia?.id || null,
     featured_media_url: featuredMedia?.url || imageUrl || null,
-  });
+  }), { requireResult: true });
 
   if (result?.link) {
     const successLabel = scheduledDate ? `Planifié pour le ${scheduledDate}` : 'Publié avec succès';
@@ -254,7 +253,11 @@ async function main() {
     );
   } else {
     console.error('❌ Échec de publication.');
-    process.exit(1);
+    throw new Error('Publication outcome unavailable');
+  }
+
+  } finally {
+    await siteOperation.finish();
   }
 }
 
