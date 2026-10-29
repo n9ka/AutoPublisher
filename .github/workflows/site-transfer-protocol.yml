@@ -23,8 +23,9 @@ jobs:
         with:
           node-version: '20'
       - name: Test operation protocol without publishing
-        run: node --test test/site-transfer-protocol.test.cjs
+        run: node --test test/site-transfer-protocol.test.cjs test/normal-publishing-mode.test.cjs
       - name: Verify deployed endpoint authentication without a reservation
         run: node src/check-site-operation-endpoint.js
         env:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SITE_TRANSFERS_ENABLED: 'false'

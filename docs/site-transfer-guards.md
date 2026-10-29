@@ -1,5 +1,13 @@
 # Protections de transfert sans migration SQL
 
+## Exploitation normale après les migrations — 29 octobre
+
+Avec `SITE_TRANSFERS_ENABLED=false` explicitement configuré, le moteur ne demande plus de réservation par article à Aspy. Il contrôle le propriétaire, la pause et les éventuels vrais verrous de transfert directement via son API Supabase existante. Une erreur WordPress n'immobilise plus le job avec une réservation persistante. Les workflows GitHub utilisent ce mode normal ; le service de reprise doit utiliser la même valeur dans son environnement. Une valeur absente conserve le protocole protégé pour compatibilité.
+
+L'interface de migration doit rester désactivée sur Vercel en exploitation normale. Une éventuelle nouvelle migration exige d'arrêter/drainer les exécutants, de remettre leurs protections en service, puis seulement de réactiver l'outil ; ne pas réactiver uniquement la variable Vercel. Aucun schéma SQL n'est modifié.
+
+Tests du mode normal : `node --test test/normal-publishing-mode.test.cjs`. Ils vérifient l'absence d'appel Aspy et de réservation durable même après un échec, ainsi que le maintien des refus sur propriétaire incorrect, pause, vrai verrou de transfert ou base indisponible.
+
 Version locale du 24 octobre 2026. Les workers conservent leurs réservations autour de la génération, de la facturation, des écritures WordPress et de la finalisation. Leur implémentation ne dépend plus de nouvelles tables ou fonctions Supabase.
 
 `src/lib/site-operations.js` appelle le serveur Aspy sur `/api/internal/site-operations` avec `SUPABASE_KEY` comme secret serveur existant. Il doit correspondre à `SUPABASE_SERVICE_ROLE_KEY` côté Vercel. La route utilise le journal existant `execution_logs`, des réservations durables et des verrous transactionnels. Aucun nouveau secret partagé n'est créé.

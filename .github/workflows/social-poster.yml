@@ -26,6 +26,7 @@ jobs:
         env:
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:      ${{ secrets.SUPABASE_KEY }}
+          SITE_TRANSFERS_ENABLED: 'false'
           DEEPSEEK_API_KEY:  ${{ secrets.DEEPSEEK_API_KEY }}
           ENCRYPTION_KEY:    ${{ secrets.ENCRYPTION_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

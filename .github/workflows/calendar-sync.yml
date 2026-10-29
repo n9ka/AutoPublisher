@@ -26,6 +26,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SITE_TRANSFERS_ENABLED: 'false'
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           CACHE_DB_URL: ${{ secrets.CACHE_DB_URL }}
           CACHE_DB_SERVICE_KEY: ${{ secrets.CACHE_DB_SERVICE_KEY }}

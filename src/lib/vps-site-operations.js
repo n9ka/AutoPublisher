@@ -20,6 +20,13 @@ async function beginVpsSiteOperation(site, {
   const config = response.data;
   if (!config || !Object.hasOwn(config, 'operation_token')) throw new Error('VPS lease protocol unavailable');
   const token = config.operation_token;
+  if (token === null && config.operation_reservations_enabled === false) {
+    let finished = false;
+    return { deferred: false, config, operation: {
+      async runExternalEffect(callback) { if (finished) throw new Error('VPS operation already finished'); return callback(); },
+      async finish() { finished = true; },
+    } };
+  }
   if (token === null) {
     throw new Error('Site operation reservation unavailable; publication refused');
   }
